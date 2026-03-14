@@ -1,0 +1,168 @@
+{
+  "projectType": "framework",
+  "projectName": "RyunixJS",
+  "projectDescription": "A standalone JavaScript framework for building modern web applications with virtual DOM, SSR, and file-system routing.",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core/components",
+              "core/hooks",
+              "core/rendering",
+              "core/virtual-dom-reconciliation",
+              "core/state-management",
+              "core/error-boundaries"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/lazy-suspense",
+              "advanced/portals",
+              "advanced/mdx-support",
+              "advanced/profiler-devtools"
+            ]
+          },
+          {
+            "group": "Webpack Preset",
+            "pages": [
+              "webpack/cli-commands",
+              "webpack/configuration",
+              "webpack/routing",
+              "webpack/ssr-ssg",
+              "webpack/server-actions",
+              "webpack/loaders"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/createElement",
+              "api/render",
+              "api/hydrate"
+            ]
+          },
+          {
+            "group": "Hooks",
+            "pages": [
+              "api/hooks/useStore",
+              "api/hooks/useReducer",
+              "api/hooks/useEffect",
+              "api/hooks/useMemo",
+              "api/hooks/useCallback",
+              "api/hooks/useRef",
+              "api/hooks/useContext",
+              "api/hooks/useTransition",
+              "api/hooks/useDeferredValue",
+              "api/hooks/useRouter",
+              "api/hooks/useMetadata"
+            ]
+          },
+          {
+            "group": "Components",
+            "pages": [
+              "api/components/ErrorBoundary",
+              "api/components/ServerBoundary",
+              "api/components/Suspense",
+              "api/components/Fragment",
+              "api/components/MDXProvider"
+            ]
+          },
+          {
+            "group": "Server API",
+            "pages": [
+              "api/server/renderToString",
+              "api/server/renderToReadableStream"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utilities/lazy",
+              "api/utilities/memo",
+              "api/utilities/forwardRef",
+              "api/utilities/createPortal",
+              "api/utilities/batchUpdates"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Virtual DOM with concurrent reconciliation",
+    "Server-Side Rendering (SSR) and Static Site Generation (SSG)",
+    "Island Architecture with partial hydration",
+    "File-system based routing",
+    "Hooks API (useStore, useReducer, useEffect, etc.)",
+    "Priority-based state updates with useTransition",
+    "Built-in MDX support",
+    "Error boundaries and Suspense",
+    "Webpack preset with CLI tooling",
+    "DevTools and Profiler integration"
+  ],
+  "publicApiSurface": [
+    "createElement",
+    "Fragment",
+    "render",
+    "hydrate",
+    "init",
+    "renderToString",
+    "renderToReadableStream",
+    "useStore",
+    "useReducer",
+    "useEffect",
+    "useLayoutEffect",
+    "useMemo",
+    "useCallback",
+    "useRef",
+    "useContext",
+    "createContext",
+    "useTransition",
+    "useDeferredValue",
+    "useRouter",
+    "usePathname",
+    "useSearchParams",
+    "useHash",
+    "useMetadata",
+    "usePersistentStore",
+    "memo",
+    "lazy",
+    "Suspense",
+    "preload",
+    "forwardRef",
+    "createPortal",
+    "ErrorBoundary",
+    "ServerBoundary",
+    "batchUpdates",
+    "Priority",
+    "profiler",
+    "useProfiler",
+    "withProfiler",
+    "MDXContent",
+    "MDXProvider",
+    "useMDXComponents",
+    "Image"
+  ]
+}

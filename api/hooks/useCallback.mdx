@@ -1,0 +1,307 @@
+---
+title: 'useCallback'
+description: 'Memoize callback functions'
+icon: 'function'
+---
+
+## Overview
+
+`useCallback` returns a memoized version of a callback function that only changes when dependencies change. It's useful for preventing unnecessary re-renders when passing callbacks to optimized child components.
+
+## Signature
+
+```javascript
+const memoizedCallback = useCallback(callback, deps)
+```
+
+## Parameters
+
+<ParamField path="callback" type="Function" required>
+  The function to memoize. This function will be returned and reused until dependencies change.
+</ParamField>
+
+<ParamField path="deps" type="Array" required>
+  Array of dependencies. The callback is recreated only when one of the dependencies changes.
+</ParamField>
+
+## Return Value
+
+Returns the memoized callback function.
+
+## Usage
+
+### Preventing Child Re-renders
+
+```javascript
+import { useCallback, useStore } from 'ryunix'
+
+function ParentComponent() {
+  const [count, setCount] = useStore(0)
+  const [text, setText] = useStore('')
+
+  // Without useCallback, this creates a new function every render
+  // causing ChildComponent to re-render even when count doesn't change
+  const handleIncrement = useCallback(() => {
+    setCount(prev => prev + 1)
+  }, []) // No dependencies - function never changes
+
+  return (
+    <div>
+      <input value={text} onChange={e => setText(e.target.value)} />
+      <ChildComponent onIncrement={handleIncrement} count={count} />
+    </div>
+  )
+}
+```
+
+### With Dependencies
+
+```javascript
+function TodoList() {
+  const [todos, setTodos] = useStore([])
+  const [filter, setFilter] = useStore('all')
+
+  // Callback recreated only when filter changes
+  const handleToggle = useCallback((id) => {
+    setTodos(prev => prev.map(todo =>
+      todo.id === id ? { ...todo, done: !todo.done } : todo
+    ))
+  }, []) // setTodos is stable, so no dependencies needed
+
+  const filteredTodos = todos.filter(todo => {
+    if (filter === 'active') return !todo.done
+    if (filter === 'completed') return todo.done
+    return true
+  })
+
+  return (
+    <div>
+      <FilterButtons onFilterChange={setFilter} currentFilter={filter} />
+      <ul>
+        {filteredTodos.map(todo => (
+          <TodoItem
+            key={todo.id}
+            todo={todo}
+            onToggle={handleToggle}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Event Handlers with Props
+
+```javascript
+function SearchComponent({ onSearch, debounceMs = 300 }) {
+  const [query, setQuery] = useStore('')
+
+  // Recreate callback when onSearch or debounceMs changes
+  const handleSearch = useCallback((value) => {
+    const timeoutId = setTimeout(() => {
+      onSearch(value)
+    }, debounceMs)
+    return () => clearTimeout(timeoutId)
+  }, [onSearch, debounceMs])
+
+  return (
+    <input
+      value={query}
+      onChange={(e) => {
+        const value = e.target.value
+        setQuery(value)
+        handleSearch(value)
+      }}
+    />
+  )
+}
+```
+
+### Optimizing Event Handlers
+
+```javascript
+function InfiniteList({ items, onLoadMore }) {
+  const [page, setPage] = useStore(1)
+
+  const handleScroll = useCallback((e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
+
+    if (isNearBottom) {
+      setPage(prev => prev + 1)
+      onLoadMore(page + 1)
+    }
+  }, [page, onLoadMore])
+
+  return (
+    <div onScroll={handleScroll} style={{ height: '500px', overflow: 'auto' }}>
+      {items.map(item => <Item key={item.id} data={item} />)}
+    </div>
+  )
+}
+```
+
+### Form Handlers
+
+```javascript
+function FormComponent() {
+  const [formData, setFormData] = useStore({
+    name: '',
+    email: '',
+    message: ''
+  })
+
+  // Single callback for all fields
+  const handleFieldChange = useCallback((field) => {
+    return (e) => {
+      setFormData(prev => ({
+        ...prev,
+        [field]: e.target.value
+      }))
+    }
+  }, [])
+
+  const handleSubmit = useCallback((e) => {
+    e.preventDefault()
+    console.log('Submitting:', formData)
+  }, [formData])
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        name="name"
+        value={formData.name}
+        onChange={handleFieldChange('name')}
+      />
+      <input
+        name="email"
+        value={formData.email}
+        onChange={handleFieldChange('email')}
+      />
+      <textarea
+        name="message"
+        value={formData.message}
+        onChange={handleFieldChange('message')}
+      />
+      <button type="submit">Submit</button>
+    </form>
+  )
+}
+```
+
+## Implementation
+
+`useCallback` is implemented using `useMemo`:
+
+```javascript
+const useCallback = (callback, deps) => {
+  if (!is.function(callback)) {
+    throw new Error('useCallback requires a function as first argument')
+  }
+  return useMemo(() => callback, deps)
+}
+```
+
+This means:
+- It memoizes the callback function itself, not its result
+- Dependencies work the same way as `useMemo`
+- Same validation and error handling as `useMemo`
+
+## Validation
+
+```javascript
+// ❌ Invalid - first argument must be a function
+useCallback('not a function', [])
+
+// ❌ Invalid - deps array is required (via useMemo)
+useCallback(() => {}, undefined)
+
+// ✅ Valid
+useCallback(() => {}, [])
+useCallback(() => {}, [dep1, dep2])
+```
+
+## When to Use useCallback
+
+**Use `useCallback` when:**
+- Passing callbacks to optimized child components
+- Callback is a dependency of other hooks (`useEffect`, `useMemo`)
+- Callbacks are used in event listeners that you add/remove
+
+**Don't use `useCallback` for:**
+- Every single function in your component (premature optimization)
+- Functions that are never passed as props
+- Simple inline event handlers that don't cause performance issues
+
+## Performance Considerations
+
+```javascript
+// ❌ Overkill - simple handler, not passed to children
+const handleClick = useCallback(() => {
+  console.log('clicked')
+}, [])
+
+// ✅ Good use case - passed to optimized child component
+const handleClick = useCallback(() => {
+  doSomething()
+}, [dependency])
+
+// ✅ Good use case - used as useEffect dependency
+useEffect(() => {
+  callback()
+}, [callback]) // callback is from useCallback
+```
+
+## Comparison with useMemo
+
+```javascript
+// These are equivalent:
+const memoizedCallback = useCallback(() => {
+  doSomething(a, b)
+}, [a, b])
+
+const memoizedCallback = useMemo(() => {
+  return () => doSomething(a, b)
+}, [a, b])
+```
+
+Use `useCallback` for functions, `useMemo` for values.
+
+## Common Patterns
+
+### Stable Callbacks
+
+```javascript
+// Empty deps array - callback never changes
+const handleClick = useCallback(() => {
+  // Use functional updates to avoid dependencies
+  setCount(prev => prev + 1)
+}, [])
+```
+
+### Callbacks with Props
+
+```javascript
+function Component({ userId, onUserUpdate }) {
+  const handleUpdate = useCallback((data) => {
+    onUserUpdate(userId, data)
+  }, [userId, onUserUpdate])
+
+  return <Form onSubmit={handleUpdate} />
+}
+```
+
+## Best Practices
+
+1. **Use functional updates** - Avoid adding state to dependencies when possible
+2. **Memoize children too** - Combine with React.memo for child components
+3. **Include all dependencies** - Don't omit values used in the callback
+4. **Don't over-optimize** - Only use when you have a performance problem
+5. **Measure impact** - Use React DevTools Profiler to verify optimizations
+
+## Related Hooks
+
+- [useMemo](/api/hooks/useMemo) - Memoize computed values
+- [useEffect](/api/hooks/useEffect) - Run side effects (callbacks can be dependencies)
+- [useRef](/api/hooks/useRef) - Store mutable values without causing re-renders

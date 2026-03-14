@@ -1,0 +1,359 @@
+---
+title: 'useTransition'
+description: 'Mark state updates as non-urgent for better responsiveness'
+icon: 'hourglass-half'
+---
+
+## Overview
+
+`useTransition` allows you to mark certain state updates as non-urgent, preventing them from blocking user interactions. This is useful for expensive updates that can be deferred to keep the UI responsive.
+
+## Signature
+
+```javascript
+const [isPending, startTransition] = useTransition()
+```
+
+## Parameters
+
+None. This hook takes no parameters.
+
+## Return Value
+
+Returns an array with two elements:
+
+<ParamField path="isPending" type="boolean">
+  A boolean indicating whether a transition is currently pending. Use this to show loading indicators during transitions.
+</ParamField>
+
+<ParamField path="startTransition" type="Function">
+  A function that wraps non-urgent updates. The callback passed to this function will be executed with low priority.
+  
+  Signature: `(callback: () => void) => void`
+</ParamField>
+
+## Usage
+
+### Basic Transition
+
+```javascript
+import { useTransition, useStore } from 'ryunix'
+
+function SearchResults() {
+  const [query, setQuery] = useStore('')
+  const [results, setResults] = useStore([])
+  const [isPending, startTransition] = useTransition()
+
+  const handleSearch = (value) => {
+    // Update input immediately (urgent)
+    setQuery(value)
+
+    // Update results with low priority (non-urgent)
+    startTransition(() => {
+      const filtered = expensiveSearchOperation(value)
+      setResults(filtered)
+    })
+  }
+
+  return (
+    <div>
+      <input
+        value={query}
+        onChange={(e) => handleSearch(e.target.value)}
+      />
+      {isPending && <div>Searching...</div>}
+      <ResultsList results={results} />
+    </div>
+  )
+}
+```
+
+### Tab Switching
+
+```javascript
+function TabContainer() {
+  const [activeTab, setActiveTab] = useStore('home')
+  const [isPending, startTransition] = useTransition()
+
+  const switchTab = (tab) => {
+    startTransition(() => {
+      setActiveTab(tab)
+    })
+  }
+
+  return (
+    <div>
+      <div className="tabs">
+        <button
+          onClick={() => switchTab('home')}
+          disabled={isPending}
+        >
+          Home
+        </button>
+        <button
+          onClick={() => switchTab('profile')}
+          disabled={isPending}
+        >
+          Profile
+        </button>
+        <button
+          onClick={() => switchTab('settings')}
+          disabled={isPending}
+        >
+          Settings
+        </button>
+      </div>
+      {isPending && <div>Loading...</div>}
+      <TabContent tab={activeTab} />
+    </div>
+  )
+}
+```
+
+### Large List Filtering
+
+```javascript
+function ProductList({ products }) {
+  const [filter, setFilter] = useStore('')
+  const [filteredProducts, setFilteredProducts] = useStore(products)
+  const [isPending, startTransition] = useTransition()
+
+  const handleFilterChange = (value) => {
+    // Update input immediately for responsive UI
+    setFilter(value)
+
+    // Filter large dataset with low priority
+    startTransition(() => {
+      const filtered = products.filter(product =>
+        product.name.toLowerCase().includes(value.toLowerCase())
+      )
+      setFilteredProducts(filtered)
+    })
+  }
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={filter}
+        onChange={(e) => handleFilterChange(e.target.value)}
+        placeholder="Filter products..."
+      />
+      {isPending ? (
+        <div className="loading-overlay">Filtering...</div>
+      ) : (
+        <div className="product-grid">
+          {filteredProducts.map(product => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+### Form Validation
+
+```javascript
+function RegistrationForm() {
+  const [formData, setFormData] = useStore({
+    username: '',
+    email: '',
+    password: ''
+  })
+  const [errors, setErrors] = useStore({})
+  const [isPending, startTransition] = useTransition()
+
+  const handleFieldChange = (field, value) => {
+    // Update field immediately
+    setFormData(prev => ({ ...prev, [field]: value }))
+
+    // Run validation with low priority
+    startTransition(() => {
+      const fieldErrors = validateField(field, value)
+      setErrors(prev => ({ ...prev, [field]: fieldErrors }))
+    })
+  }
+
+  return (
+    <form>
+      <input
+        name="username"
+        value={formData.username}
+        onChange={(e) => handleFieldChange('username', e.target.value)}
+      />
+      {isPending && <span className="validating">Validating...</span>}
+      {errors.username && <span className="error">{errors.username}</span>}
+      {/* More fields... */}
+    </form>
+  )
+}
+```
+
+### Data Visualization
+
+```javascript
+function Chart({ data }) {
+  const [timeRange, setTimeRange] = useStore('1d')
+  const [chartData, setChartData] = useStore(processData(data, '1d'))
+  const [isPending, startTransition] = useTransition()
+
+  const handleTimeRangeChange = (range) => {
+    // Update UI immediately
+    setTimeRange(range)
+
+    // Process data with low priority
+    startTransition(() => {
+      const processed = processData(data, range)
+      setChartData(processed)
+    })
+  }
+
+  return (
+    <div>
+      <div className="controls">
+        {['1d', '1w', '1m', '1y'].map(range => (
+          <button
+            key={range}
+            onClick={() => handleTimeRangeChange(range)}
+            disabled={isPending}
+          >
+            {range}
+          </button>
+        ))}
+      </div>
+      {isPending && <div className="chart-loading">Updating chart...</div>}
+      <ChartComponent data={chartData} />
+    </div>
+  )
+}
+```
+
+## Implementation Details
+
+`useTransition` uses RyunixJS's priority scheduling system:
+
+```javascript
+const useTransition = () => {
+  const [isPending, setIsPending] = useStorePriority(false)
+
+  const startTransition = (callback) => {
+    setIsPending(true, Priority.IMMEDIATE)
+
+    setTimeout(() => {
+      runWithPriority(Priority.LOW, () => {
+        callback()
+        setIsPending(false, Priority.LOW)
+      })
+    }, 0)
+  }
+
+  return [isPending, startTransition]
+}
+```
+
+### Priority Levels
+
+- `Priority.IMMEDIATE` - Urgent updates (user input, isPending flag)
+- `Priority.NORMAL` - Default priority
+- `Priority.LOW` - Non-urgent updates (transitions)
+
+## When to Use useTransition
+
+**Use `useTransition` for:**
+- Expensive filtering/sorting of large lists
+- Complex data transformations
+- Tab/route switching with expensive content
+- Heavy computations triggered by user input
+- Non-critical UI updates
+
+**Don't use `useTransition` for:**
+- Simple state updates
+- Critical user feedback (like input value)
+- Small, fast operations
+- Side effects (use `useEffect` instead)
+
+## Comparison with useDeferredValue
+
+```javascript
+// useTransition - wrap the update itself
+const [isPending, startTransition] = useTransition()
+startTransition(() => {
+  setExpensiveState(newValue)
+})
+
+// useDeferredValue - defer the value
+const [expensiveValue, setExpensiveValue] = useStore(value)
+const deferredValue = useDeferredValue(expensiveValue)
+```
+
+Use `useTransition` when you control the update (state setter).
+Use `useDeferredValue` when you receive the value as a prop.
+
+## Best Practices
+
+1. **Immediate feedback** - Always update user-facing values immediately
+2. **Show pending state** - Use `isPending` to indicate background work
+3. **Don't abuse** - Not all updates need to be transitions
+4. **Combine with debouncing** - For input-driven updates, consider debouncing first
+5. **Keep transitions pure** - Don't perform side effects in transition callbacks
+
+## Performance Considerations
+
+```javascript
+// ❌ Don't use for simple updates
+startTransition(() => {
+  setCount(count + 1) // Too simple
+})
+
+// ✅ Good for expensive operations
+startTransition(() => {
+  const processed = expensiveDataProcessing(largeDataset)
+  setProcessedData(processed)
+})
+
+// ✅ Good for keeping UI responsive
+startTransition(() => {
+  setSelectedTab(newTab) // Expensive tab content
+})
+```
+
+## Common Patterns
+
+### Optimistic UI Updates
+
+```javascript
+function TodoList() {
+  const [todos, setTodos] = useStore([])
+  const [isPending, startTransition] = useTransition()
+
+  const addTodo = async (text) => {
+    const optimisticTodo = { id: Date.now(), text, pending: true }
+    
+    // Add optimistically
+    setTodos(prev => [...prev, optimisticTodo])
+
+    // Sync with server in transition
+    startTransition(async () => {
+      const savedTodo = await api.createTodo(text)
+      setTodos(prev => prev.map(t => 
+        t.id === optimisticTodo.id ? savedTodo : t
+      ))
+    })
+  }
+
+  return (
+    <div>
+      {isPending && <div>Syncing...</div>}
+      {todos.map(todo => <Todo key={todo.id} {...todo} />)}
+    </div>
+  )
+}
+```
+
+## Related Hooks
+
+- [useDeferredValue](/api/hooks/useDeferredValue) - Defer value updates instead of wrapping setters
+- [useStore](/api/hooks/useStore) - State management (useTransition uses priority-aware version)
+- [useEffect](/api/hooks/useEffect) - Side effects (different from transitions)

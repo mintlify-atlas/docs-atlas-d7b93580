@@ -1,0 +1,381 @@
+---
+title: 'useMetadata'
+description: 'Dynamically manage document metadata and SEO tags'
+icon: 'tags'
+---
+
+## Overview
+
+`useMetadata` allows you to dynamically update document metadata including title, meta tags, and canonical URLs. It's useful for SEO and social media sharing but only works client-side.
+
+<Warning>
+This hook cannot be reached by Google crawlers or social media bots. For proper SEO, use server-side rendering with metadata in the initial HTML.
+</Warning>
+
+## Signature
+
+```javascript
+useMetadata(tags, options)
+```
+
+## Parameters
+
+<ParamField path="tags" type="object" default="{}">
+  Object containing metadata tags to set:
+  
+  - `title` or `pageTitle` - Page title
+  - `canonical` - Canonical URL
+  - `description` - Meta description
+  - `keywords` - Meta keywords
+  - `og:*` - Open Graph tags (Facebook, LinkedIn)
+  - `twitter:*` - Twitter Card tags
+  - Any other meta tag name/property
+</ParamField>
+
+<ParamField path="options" type="object" default="{}">
+  Configuration options:
+  
+  ```typescript
+  {
+    title?: {
+      template?: string  // Template with %s placeholder
+      prefix?: string    // Default title if none provided
+    }
+  }
+  ```
+</ParamField>
+
+## Return Value
+
+Returns `undefined`. This hook doesn't return a value.
+
+## Usage
+
+### Basic Page Title
+
+```javascript
+import { useMetadata } from 'ryunix'
+
+function AboutPage() {
+  useMetadata({
+    title: 'About Us'
+  })
+
+  return <div>About page content</div>
+}
+```
+
+### SEO Meta Tags
+
+```javascript
+function ProductPage({ product }) {
+  useMetadata({
+    title: product.name,
+    description: product.description,
+    keywords: product.tags.join(', '),
+    canonical: `https://example.com/products/${product.id}`
+  })
+
+  return (
+    <div>
+      <h1>{product.name}</h1>
+      <p>{product.description}</p>
+    </div>
+  )
+}
+```
+
+### Open Graph Tags
+
+```javascript
+function BlogPost({ post }) {
+  useMetadata({
+    title: post.title,
+    description: post.excerpt,
+    'og:title': post.title,
+    'og:description': post.excerpt,
+    'og:image': post.coverImage,
+    'og:url': `https://blog.example.com/posts/${post.slug}`,
+    'og:type': 'article',
+    'og:site_name': 'My Awesome Blog'
+  })
+
+  return (
+    <article>
+      <h1>{post.title}</h1>
+      <div>{post.content}</div>
+    </article>
+  )
+}
+```
+
+### Twitter Cards
+
+```javascript
+function SocialSharePage({ content }) {
+  useMetadata({
+    title: content.title,
+    'twitter:card': 'summary_large_image',
+    'twitter:site': '@yourusername',
+    'twitter:title': content.title,
+    'twitter:description': content.description,
+    'twitter:image': content.image,
+    'twitter:creator': '@authorname'
+  })
+
+  return <div>{content.body}</div>
+}
+```
+
+### Title Template
+
+```javascript
+function UserProfile({ user }) {
+  useMetadata(
+    {
+      pageTitle: user.name
+    },
+    {
+      title: {
+        template: '%s | My App',
+        prefix: 'My App'
+      }
+    }
+  )
+
+  // Document title will be: "John Doe | My App"
+  return <div>User: {user.name}</div>
+}
+
+function HomePage() {
+  useMetadata(
+    {},
+    {
+      title: {
+        template: '%s | My App',
+        prefix: 'Welcome'
+      }
+    }
+  )
+
+  // Document title will be: "Welcome" (no pageTitle provided)
+  return <div>Home page</div>
+}
+```
+
+### Dynamic Metadata from Route
+
+```javascript
+function DynamicPage() {
+  const { params } = useRouter()
+  const [data, setData] = useStore(null)
+
+  useEffect(() => {
+    fetch(`/api/pages/${params.id}`)
+      .then(res => res.json())
+      .then(setData)
+  }, [params.id])
+
+  useMetadata({
+    title: data?.title || 'Loading...',
+    description: data?.description,
+    canonical: `https://example.com/${params.id}`
+  })
+
+  if (!data) return <div>Loading...</div>
+  return <div>{data.content}</div>
+}
+```
+
+### Complete SEO Setup
+
+```javascript
+function Article({ article }) {
+  useMetadata(
+    {
+      // Page title
+      title: article.title,
+      
+      // Standard meta tags
+      description: article.excerpt,
+      keywords: article.tags.join(', '),
+      author: article.author.name,
+      
+      // Canonical URL
+      canonical: `https://blog.example.com/articles/${article.slug}`,
+      
+      // Open Graph
+      'og:title': article.title,
+      'og:description': article.excerpt,
+      'og:image': article.coverImage,
+      'og:url': `https://blog.example.com/articles/${article.slug}`,
+      'og:type': 'article',
+      'og:article:published_time': article.publishedAt,
+      'og:article:author': article.author.name,
+      'og:site_name': 'My Blog',
+      
+      // Twitter
+      'twitter:card': 'summary_large_image',
+      'twitter:site': '@myblog',
+      'twitter:title': article.title,
+      'twitter:description': article.excerpt,
+      'twitter:image': article.coverImage,
+      'twitter:creator': article.author.twitter
+    },
+    {
+      title: {
+        template: '%s | My Blog',
+        prefix: 'My Blog'
+      }
+    }
+  )
+
+  return (
+    <article>
+      <h1>{article.title}</h1>
+      <div>{article.content}</div>
+    </article>
+  )
+}
+```
+
+### Multi-language Support
+
+```javascript
+function LocalizedPage({ content, language }) {
+  useMetadata({
+    title: content[language].title,
+    description: content[language].description,
+    'og:locale': language === 'en' ? 'en_US' : 'es_ES',
+    'og:locale:alternate': language === 'en' ? 'es_ES' : 'en_US'
+  })
+
+  return <div>{content[language].body}</div>
+}
+```
+
+## Server-Side Rendering
+
+During SSR, metadata is stored in state:
+
+```javascript
+if (state.isServerRendering) {
+  state.ssrMetadata = { ...state.ssrMetadata, ...tags }
+  return
+}
+```
+
+The metadata is then available for rendering into the HTML during server-side rendering.
+
+## Implementation Details
+
+### Title Handling
+
+```javascript
+let finalTitle = 'Ryunix App'
+const template = options.title?.template
+const defaultTitle = options.title?.prefix || 'Ryunix App'
+const pageTitle = tags.pageTitle || tags.title
+
+if (is.string(pageTitle) && pageTitle.trim()) {
+  finalTitle = template?.includes('%s')
+    ? template.replace('%s', pageTitle)
+    : pageTitle
+} else {
+  finalTitle = defaultTitle
+}
+
+document.title = finalTitle
+```
+
+### Canonical URL
+
+```javascript
+if (tags.canonical) {
+  let link = document.querySelector('link[rel="canonical"]')
+  if (!link) {
+    link = document.createElement('link')
+    link.setAttribute('rel', 'canonical')
+    document.head.appendChild(link)
+  }
+  link.setAttribute('href', tags.canonical)
+}
+```
+
+### Meta Tags
+
+```javascript
+Object.entries(tags).forEach(([key, value]) => {
+  if (['title', 'pageTitle', 'canonical'].includes(key)) return
+
+  const isProperty = key.startsWith('og:') || key.startsWith('twitter:')
+  const selector = `meta[${isProperty ? 'property' : 'name'}='${key}']`
+  let meta = document.head.querySelector(selector)
+
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.setAttribute(isProperty ? 'property' : 'name', key)
+    document.head.appendChild(meta)
+  }
+  meta.setAttribute('content', value)
+})
+```
+
+## Limitations
+
+<Warning>
+- **Client-side only** - Bots won't see dynamically set metadata
+- **Not for SEO** - Use SSR with proper HTML meta tags instead
+- **Social media crawlers** - Won't pick up client-side metadata
+- **Performance** - DOM manipulation on every render
+</Warning>
+
+## Best Practices
+
+1. **Use SSR for SEO** - Don't rely on this for search engine optimization
+2. **Memoize options** - Prevent unnecessary re-runs with stable options
+3. **Include both og and twitter** - Cover all social platforms
+4. **Set canonical URLs** - Help search engines understand page relationships
+5. **Use title templates** - Maintain consistent branding across pages
+
+## Common Patterns
+
+### Layout with Default Metadata
+
+```javascript
+function Layout({ children }) {
+  useMetadata(
+    {},
+    {
+      title: {
+        template: '%s | My App',
+        prefix: 'My App - Welcome'
+      }
+    }
+  )
+
+  return <div>{children}</div>
+}
+```
+
+### Conditional Metadata
+
+```javascript
+function ConditionalMeta({ isPublished, post }) {
+  useMetadata(isPublished ? {
+    title: post.title,
+    description: post.excerpt,
+    'og:type': 'article'
+  } : {
+    title: 'Draft',
+    robots: 'noindex, nofollow'
+  })
+
+  return <article>{post.content}</article>
+}
+```
+
+## Related Hooks
+
+- [useRouter](/api/hooks/useRouter) - Often used together for dynamic metadata based on routes
+- [useEffect](/api/hooks/useEffect) - useMetadata is built on top of useEffect

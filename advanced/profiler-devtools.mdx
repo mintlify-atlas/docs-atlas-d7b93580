@@ -1,0 +1,601 @@
+---
+title: Profiler & DevTools
+description: Measure component performance and debug rendering with built-in profiling tools
+---
+
+## Overview
+
+RyunixJS includes a powerful performance profiler and development tools for measuring render times, identifying bottlenecks, and optimizing your application.
+
+## Profiler API
+
+The global profiler instance tracks component render performance automatically.
+
+### Basic Usage
+
+```javascript
+import { profiler } from 'ryunix';
+
+// Get performance statistics
+const stats = profiler.getStats();
+console.log(stats);
+// {
+//   total: 1234.56,
+//   avg: 12.34,
+//   max: 45.67,
+//   min: 2.34,
+//   count: 100
+// }
+
+// Log stats to console
+profiler.logStats();
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:123`
+
+### API Reference
+
+#### profiler.startMeasure(name)
+
+Start measuring a performance metric:
+
+```javascript
+profiler.startMeasure('data-fetch');
+await fetchData();
+profiler.endMeasure('data-fetch');
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:16-19`
+
+#### profiler.endMeasure(name)
+
+End measurement and return duration:
+
+```javascript
+const duration = profiler.endMeasure('data-fetch');
+console.log(`Fetch took ${duration}ms`);
+```
+
+**Returns:** Duration in milliseconds
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:21-30`
+
+#### profiler.recordRender(componentName, duration)
+
+Manually record component render time:
+
+```javascript
+profiler.recordRender('UserProfile', 15.7);
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:32-44`
+
+**Implementation:**
+
+```javascript
+recordRender(componentName, duration) {
+  if (!this.enabled) return;
+  
+  this.renderTimes.push({
+    component: componentName,
+    duration,
+    timestamp: Date.now(),
+  });
+  
+  if (this.renderTimes.length > this.maxSamples) {
+    this.renderTimes.shift();
+  }
+}
+```
+
+#### profiler.getStats()
+
+Get aggregate performance statistics:
+
+```javascript
+const stats = profiler.getStats();
+console.log(`Average render: ${stats.avg.toFixed(2)}ms`);
+console.log(`Max render: ${stats.max.toFixed(2)}ms`);
+```
+
+**Returns:**
+- `total` - Total render time
+- `avg` - Average render time
+- `max` - Longest render time
+- `min` - Shortest render time
+- `count` - Number of renders tracked
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:46-55`
+
+#### profiler.getSlowestComponents(limit)
+
+Identify performance bottlenecks:
+
+```javascript
+const slowest = profiler.getSlowestComponents(5);
+slowest.forEach(comp => {
+  console.log(`${comp.name}: ${comp.avg.toFixed(2)}ms avg`);
+});
+```
+
+**Parameters:**
+- `limit` (number) - Number of components to return (default: 10)
+
+**Returns:** Array of components sorted by average render time
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:57-81`
+
+**Implementation:**
+
+```javascript
+getSlowestComponents(limit = 10) {
+  if (!this.enabled) return [];
+  
+  const byComponent = new Map();
+  
+  this.renderTimes.forEach(({ component, duration }) => {
+    if (!byComponent.has(component)) {
+      byComponent.set(component, { total: 0, count: 0, max: 0 });
+    }
+    const stats = byComponent.get(component);
+    stats.total += duration;
+    stats.count++;
+    stats.max = Math.max(stats.max, duration);
+  });
+  
+  return Array.from(byComponent.entries())
+    .map(([name, stats]) => ({
+      name,
+      avg: stats.total / stats.count,
+      max: stats.max,
+      count: stats.count,
+    }))
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, limit);
+}
+```
+
+#### profiler.logStats()
+
+Print formatted performance report to console:
+
+```javascript
+profiler.logStats();
+// Console output:
+// 🔍 Ryunix Performance Stats
+//   Total renders: 150
+//   Avg render time: 8.45ms
+//   Min: 1.23ms | Max: 34.56ms
+//
+//   ⚠️  Slowest components:
+//   1. DataTable: 25.34ms avg (10 renders)
+//   2. Chart: 18.67ms avg (5 renders)
+//   ...
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:83-106`
+
+#### profiler.clear()
+
+Reset all profiler data:
+
+```javascript
+profiler.clear();
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:108-111`
+
+#### profiler.enable() / profiler.disable()
+
+Toggle profiler on/off:
+
+```javascript
+profiler.disable(); // Stop tracking
+profiler.enable();  // Resume tracking
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:113-119`
+
+## useProfiler Hook
+
+Profile individual component renders:
+
+```jsx
+import { useProfiler } from 'ryunix';
+
+function ExpensiveComponent() {
+  const endProfile = useProfiler('ExpensiveComponent');
+  
+  // Component logic here
+  
+  endProfile(); // Call when render completes
+  
+  return <div>Content</div>;
+}
+```
+
+### API Signature
+
+```javascript
+const useProfiler = (componentName) => Function
+```
+
+**Parameters:**
+- `componentName` (string) - Name to identify in profiler
+
+**Returns:**
+- Function to call when profiling should end
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:128-135`
+
+**Implementation:**
+
+```javascript
+const useProfiler = (componentName) => {
+  const startTime = perfNow();
+  
+  return () => {
+    const duration = perfNow() - startTime;
+    profiler.recordRender(componentName, duration);
+  };
+}
+```
+
+## withProfiler HOC
+
+Automatically profile components with a Higher-Order Component:
+
+```jsx
+import { withProfiler } from 'ryunix';
+
+const DataTable = ({ data }) => {
+  return (
+    <table>
+      {data.map(row => <tr key={row.id}>...</tr>)}
+    </table>
+  );
+};
+
+// Wrap component to enable profiling
+const ProfiledDataTable = withProfiler(DataTable, 'DataTable');
+
+export default ProfiledDataTable;
+```
+
+### API Signature
+
+```javascript
+const withProfiler = (Component, name) => ProfiledComponent
+```
+
+**Parameters:**
+- `Component` (Function) - Component to profile
+- `name` (string) - Name for profiler tracking
+
+**Returns:**
+- Wrapped component that records render times
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:140-148`
+
+**Implementation:**
+
+```javascript
+const withProfiler = (Component, name) => {
+  return (props) => {
+    profiler.startMeasure(name);
+    const result = Component(props);
+    const duration = profiler.endMeasure(name);
+    if (duration) profiler.recordRender(name, duration);
+    return result;
+  };
+}
+```
+
+## Development Warnings
+
+RyunixJS includes helpful development warnings for common issues.
+
+### Hook Validation
+
+Detects hooks called outside components:
+
+```javascript
+import { validateHookContext } from 'ryunix/devtools';
+
+validateHookContext('useStore');
+// Throws if not in component context
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/devtools.js:30-41`
+
+### Component Name Detection
+
+Get readable component names for debugging:
+
+```javascript
+import { getComponentName } from 'ryunix/devtools';
+
+const name = getComponentName(MyComponent);
+// Returns: "MyComponent" or "Anonymous"
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/devtools.js:22-25`
+
+### Warning Utilities
+
+Custom development warnings:
+
+```javascript
+import { warning, error } from 'ryunix/devtools';
+
+warning(props.id, 'Component requires an id prop');
+error('Invalid configuration detected');
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/devtools.js:8-17`
+
+## Practical Examples
+
+### Monitoring Dashboard
+
+Create a real-time performance dashboard:
+
+```jsx
+import { profiler, useStore, useEffect } from 'ryunix';
+
+function PerformanceDashboard() {
+  const [stats, setStats] = useStore(null);
+  const [slowest, setSlowest] = useStore([]);
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStats(profiler.getStats());
+      setSlowest(profiler.getSlowestComponents(10));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  if (!stats) return <div>Loading...</div>;
+  
+  return (
+    <div className="dashboard">
+      <h2>Performance Stats</h2>
+      <div className="stats-grid">
+        <StatCard 
+          label="Avg Render" 
+          value={`${stats.avg.toFixed(2)}ms`} 
+        />
+        <StatCard 
+          label="Max Render" 
+          value={`${stats.max.toFixed(2)}ms`} 
+        />
+        <StatCard 
+          label="Total Renders" 
+          value={stats.count} 
+        />
+      </div>
+      
+      <h3>Slowest Components</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Avg Time</th>
+            <th>Max Time</th>
+            <th>Renders</th>
+          </tr>
+        </thead>
+        <tbody>
+          {slowest.map((comp, i) => (
+            <tr key={i}>
+              <td>{comp.name}</td>
+              <td>{comp.avg.toFixed(2)}ms</td>
+              <td>{comp.max.toFixed(2)}ms</td>
+              <td>{comp.count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+### Performance Budget
+
+Warn when components exceed performance budgets:
+
+```jsx
+import { withProfiler, profiler } from 'ryunix';
+
+function withPerformanceBudget(Component, name, budgetMs) {
+  return withProfiler((props) => {
+    const result = Component(props);
+    
+    // Check if last render exceeded budget
+    const stats = profiler.getStats();
+    if (stats && stats.max > budgetMs) {
+      console.warn(
+        `⚠️  ${name} exceeded performance budget: ` +
+        `${stats.max.toFixed(2)}ms > ${budgetMs}ms`
+      );
+    }
+    
+    return result;
+  }, name);
+}
+
+// Usage
+const DataTable = withPerformanceBudget(
+  DataTableComponent, 
+  'DataTable', 
+  50 // 50ms budget
+);
+```
+
+### Automated Performance Tests
+
+Integrate profiler into tests:
+
+```javascript
+import { profiler, render } from 'ryunix';
+
+test('Component renders under 100ms', () => {
+  profiler.clear();
+  profiler.enable();
+  
+  render(<ExpensiveComponent />);
+  
+  const stats = profiler.getStats();
+  expect(stats.max).toBeLessThan(100);
+});
+```
+
+### Custom Performance Tracking
+
+Track custom metrics:
+
+```jsx
+import { profiler, useEffect } from 'ryunix';
+
+function DataFetchingComponent() {
+  useEffect(() => {
+    profiler.startMeasure('data-fetch');
+    
+    fetchData()
+      .then(data => {
+        const duration = profiler.endMeasure('data-fetch');
+        console.log(`Data fetched in ${duration}ms`);
+      });
+  }, []);
+  
+  return <div>Content</div>;
+}
+```
+
+## Browser DevTools Integration
+
+Ryunix profiler works with browser performance APIs:
+
+```javascript
+// Profiler uses performance.now() when available
+const perfNow = () =>
+  typeof performance !== 'undefined' 
+    ? performance.now() 
+    : Date.now()
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:2-3`
+
+View timing data in Chrome DevTools Performance tab.
+
+## Production Behavior
+
+Profiler is automatically disabled in production:
+
+```javascript
+constructor() {
+  this.enabled = process.env.NODE_ENV !== 'production';
+  // ...
+}
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:10`
+
+No performance overhead in production builds.
+
+## Configuration
+
+### Max Samples
+
+Profiler stores last 100 renders by default:
+
+```javascript
+this.maxSamples = 100
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/profiler.js:13`
+
+Adjust if needed:
+
+```javascript
+import { profiler } from 'ryunix';
+
+profiler.maxSamples = 500; // Store more samples
+```
+
+## Best Practices
+
+### 1. Profile in Development
+
+Run profiler during development to catch issues early:
+
+```javascript
+if (process.env.NODE_ENV === 'development') {
+  setInterval(() => {
+    profiler.logStats();
+  }, 10000); // Log every 10 seconds
+}
+```
+
+### 2. Focus on Slowest Components
+
+Prioritize optimization by focusing on top offenders:
+
+```javascript
+const slowest = profiler.getSlowestComponents(3);
+if (slowest[0]?.avg > 50) {
+  console.warn('Optimization needed:', slowest[0].name);
+}
+```
+
+### 3. Measure Before Optimizing
+
+Always profile before and after optimization:
+
+```javascript
+profiler.clear();
+// Run component
+const before = profiler.getStats();
+
+// Apply optimization
+
+profiler.clear();
+// Run component
+const after = profiler.getStats();
+
+console.log(
+  `Improvement: ${before.avg - after.avg}ms`
+);
+```
+
+### 4. Use with Memo
+
+Combine profiling with memoization:
+
+```jsx
+import { memo, withProfiler } from 'ryunix';
+
+const OptimizedComponent = memo(
+  withProfiler(Component, 'Component')
+);
+```
+
+## Performance Tips
+
+- Profiler has minimal overhead in development
+- Zero overhead in production (disabled)
+- Uses efficient Map/Array data structures
+- Automatically limits stored samples
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Memo & Optimization" icon="bolt" href="/api/utilities/memo">
+    Optimize component re-renders
+  </Card>
+  <Card title="Error Boundaries" icon="shield-halved" href="/core/error-boundaries">
+    Handle errors gracefully
+  </Card>
+</CardGroup>

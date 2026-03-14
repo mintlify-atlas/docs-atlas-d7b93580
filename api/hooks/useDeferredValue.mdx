@@ -1,0 +1,382 @@
+---
+title: 'useDeferredValue'
+description: 'Defer expensive value updates to keep UI responsive'
+icon: 'clock'
+---
+
+## Overview
+
+`useDeferredValue` accepts a value and returns a deferred version that lags behind the original. This is useful when you have an expensive component that depends on frequently changing data but want to keep the UI responsive.
+
+## Signature
+
+```javascript
+const deferredValue = useDeferredValue(value)
+```
+
+## Parameters
+
+<ParamField path="value" type="any" required>
+  The value to defer. Can be any type - primitives, objects, arrays, etc.
+  
+  The deferred version will update after a short delay (100ms by default).
+</ParamField>
+
+## Return Value
+
+Returns the deferred version of the value. During the initial render, equals the input value. On subsequent updates, lags behind by ~100ms.
+
+## Usage
+
+### Search with Heavy Results
+
+```javascript
+import { useDeferredValue, useStore } from 'ryunix'
+
+function SearchPage() {
+  const [query, setQuery] = useStore('')
+  const deferredQuery = useDeferredValue(query)
+
+  return (
+    <div>
+      {/* Input updates immediately */}
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search..."
+      />
+      
+      {/* Results use deferred query - renders with low priority */}
+      <SearchResults query={deferredQuery} />
+    </div>
+  )
+}
+
+function SearchResults({ query }) {
+  // Expensive filtering/rendering
+  const results = expensiveSearch(query)
+
+  return (
+    <ul>
+      {results.map(result => (
+        <li key={result.id}>{result.title}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Large List Filtering
+
+```javascript
+function ProductList({ products }) {
+  const [filter, setFilter] = useStore('')
+  const deferredFilter = useDeferredValue(filter)
+
+  // Expensive filtering operation uses deferred value
+  const filteredProducts = useMemo(() => {
+    return products.filter(p =>
+      p.name.toLowerCase().includes(deferredFilter.toLowerCase())
+    )
+  }, [products, deferredFilter])
+
+  const isStale = filter !== deferredFilter
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
+      <div style={{ opacity: isStale ? 0.5 : 1 }}>
+        {isStale && <div>Updating...</div>}
+        {filteredProducts.map(product => (
+          <ProductCard key={product.id} product={product} />
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+### Live Preview
+
+```javascript
+function MarkdownEditor() {
+  const [markdown, setMarkdown] = useStore('')
+  const deferredMarkdown = useDeferredValue(markdown)
+
+  return (
+    <div className="editor-layout">
+      <div className="editor-pane">
+        <textarea
+          value={markdown}
+          onChange={(e) => setMarkdown(e.target.value)}
+          placeholder="Type markdown..."
+        />
+      </div>
+      <div className="preview-pane">
+        {/* Preview renders with deferred value */}
+        <MarkdownPreview content={deferredMarkdown} />
+      </div>
+    </div>
+  )
+}
+
+function MarkdownPreview({ content }) {
+  // Expensive markdown parsing and rendering
+  const html = parseMarkdown(content)
+  return <div dangerouslySetInnerHTML={{ __html: html }} />
+}
+```
+
+### Chart Updates
+
+```javascript
+function InteractiveChart({ data }) {
+  const [config, setConfig] = useStore({
+    type: 'bar',
+    timeRange: '1m',
+    groupBy: 'day'
+  })
+  const deferredConfig = useDeferredValue(config)
+
+  // Expensive chart data processing
+  const chartData = useMemo(() => {
+    return processChartData(data, deferredConfig)
+  }, [data, deferredConfig])
+
+  return (
+    <div>
+      <ConfigPanel config={config} onChange={setConfig} />
+      <Chart data={chartData} />
+    </div>
+  )
+}
+```
+
+### Map with Markers
+
+```javascript
+function MapView({ locations }) {
+  const [zoom, setZoom] = useStore(10)
+  const [center, setCenter] = useStore([0, 0])
+  const deferredZoom = useDeferredValue(zoom)
+  const deferredCenter = useDeferredValue(center)
+
+  // Expensive: recalculate which markers to show
+  const visibleMarkers = useMemo(() => {
+    return calculateVisibleMarkers(locations, deferredCenter, deferredZoom)
+  }, [locations, deferredCenter, deferredZoom])
+
+  return (
+    <div>
+      <MapControls
+        zoom={zoom}
+        center={center}
+        onZoomChange={setZoom}
+        onCenterChange={setCenter}
+      />
+      <Map
+        zoom={deferredZoom}
+        center={deferredCenter}
+        markers={visibleMarkers}
+      />
+    </div>
+  )
+}
+```
+
+### Form with Live Validation
+
+```javascript
+function EmailInput() {
+  const [email, setEmail] = useStore('')
+  const deferredEmail = useDeferredValue(email)
+
+  // Expensive validation (API call, regex, etc.)
+  const validationResult = useMemo(() => {
+    return validateEmail(deferredEmail)
+  }, [deferredEmail])
+
+  const isTyping = email !== deferredEmail
+
+  return (
+    <div>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      {!isTyping && validationResult.error && (
+        <span className="error">{validationResult.error}</span>
+      )}
+      {!isTyping && validationResult.suggestions && (
+        <div className="suggestions">
+          Did you mean: {validationResult.suggestions.join(', ')}?
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+## Implementation Details
+
+```javascript
+const useDeferredValue = (value) => {
+  const [deferredValue, setDeferredValue] = useStorePriority(value)
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDeferredValue(value, Priority.LOW)
+    }, 100)
+
+    return () => clearTimeout(timeout)
+  }, [value])
+
+  return deferredValue
+}
+```
+
+- Delay: 100ms by default
+- Priority: Updates use `Priority.LOW`
+- Cleanup: Timeout is cleared if value changes again
+
+## Detecting Stale Values
+
+```javascript
+function Component() {
+  const [value, setValue] = useStore('')
+  const deferredValue = useDeferredValue(value)
+  
+  const isStale = value !== deferredValue
+
+  return (
+    <div>
+      <input value={value} onChange={e => setValue(e.target.value)} />
+      <div style={{ opacity: isStale ? 0.5 : 1 }}>
+        {isStale && <Spinner />}
+        <ExpensiveComponent value={deferredValue} />
+      </div>
+    </div>
+  )
+}
+```
+
+## Comparison with useTransition
+
+| Feature | useDeferredValue | useTransition |
+|---------|------------------|---------------|
+| Use case | Defer a value | Defer an update |
+| Control | Value is from props/parent | You control the state |
+| Pending state | Manual (`value !== deferred`) | Built-in `isPending` |
+| API | Single value in/out | Callback wrapper |
+
+```javascript
+// useDeferredValue - when you receive the value
+function Child({ searchQuery }) {
+  const deferredQuery = useDeferredValue(searchQuery)
+  return <Results query={deferredQuery} />
+}
+
+// useTransition - when you control the state
+function Parent() {
+  const [query, setQuery] = useStore('')
+  const [isPending, startTransition] = useTransition()
+  
+  const handleChange = (value) => {
+    setQuery(value)
+    startTransition(() => {
+      // expensive update
+    })
+  }
+}
+```
+
+## When to Use
+
+**Use `useDeferredValue` for:**
+- Expensive rendering that depends on frequently changing props
+- Search results, live previews, data visualizations
+- When child component is expensive but you can't use `useTransition`
+- Keeping input responsive while processing heavy data
+
+**Don't use for:**
+- Simple, fast components
+- When you control the state (use `useTransition` instead)
+- Critical updates that must be immediate
+- Network requests (use proper async state management)
+
+## Performance Considerations
+
+```javascript
+// ❌ Overkill for simple components
+const deferredName = useDeferredValue(name)
+return <div>{deferredName}</div> // Too simple
+
+// ✅ Good for expensive operations
+const deferredQuery = useDeferredValue(query)
+return <ExpensiveSearchResults query={deferredQuery} />
+
+// ✅ Combine with useMemo
+const deferredFilter = useDeferredValue(filter)
+const filtered = useMemo(() => 
+  expensiveFilter(items, deferredFilter),
+  [items, deferredFilter]
+)
+```
+
+## Best Practices
+
+1. **Keep input responsive** - Never defer user input values themselves
+2. **Show stale state** - Visually indicate when content is updating
+3. **Combine with memoization** - Use with `useMemo` for best results
+4. **Don't overuse** - Only for genuinely expensive operations
+5. **Test perceived performance** - Ensure it actually feels better to users
+
+## Common Patterns
+
+### Stale-While-Revalidate
+
+```javascript
+function DataView({ queryParams }) {
+  const deferredParams = useDeferredValue(queryParams)
+  const data = useFetchData(deferredParams)
+  const isStale = queryParams !== deferredParams
+
+  return (
+    <div className={isStale ? 'stale' : 'fresh'}>
+      {isStale && <LoadingBar />}
+      <DataTable data={data} />
+    </div>
+  )
+}
+```
+
+### Gradual Reveal
+
+```javascript
+function Gallery({ images, filter }) {
+  const deferredFilter = useDeferredValue(filter)
+  const filtered = images.filter(img => img.tags.includes(deferredFilter))
+  const isUpdating = filter !== deferredFilter
+
+  return (
+    <div style={{
+      transition: 'opacity 0.3s',
+      opacity: isUpdating ? 0.6 : 1
+    }}>
+      {filtered.map(img => <Image key={img.id} {...img} />)}
+    </div>
+  )
+}
+```
+
+## Related Hooks
+
+- [useTransition](/api/hooks/useTransition) - Defer state updates you control
+- [useMemo](/api/hooks/useMemo) - Memoize expensive computations
+- [useDebounce](/api/hooks/useDeferredValue) - Delay value updates with debouncing
+- [useThrottle](/api/hooks/useDeferredValue) - Limit update frequency

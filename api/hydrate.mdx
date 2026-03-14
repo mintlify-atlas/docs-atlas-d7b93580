@@ -1,0 +1,236 @@
+---
+title: hydrate
+description: Attach RyunixJS to server-rendered HTML
+---
+
+## Overview
+
+The `hydrate` function attaches RyunixJS to an existing server-rendered DOM tree. Instead of clearing and re-rendering like [`render`](/api/render), hydrate walks through existing DOM nodes, attaches event listeners, and reconciles state while preserving the server-rendered HTML structure.
+
+<Info>
+  Hydration is essential for SSR (Server-Side Rendering) applications to achieve fast initial page loads while maintaining interactivity.
+</Info>
+
+## Signature
+
+```javascript
+hydrate(element, container)
+```
+
+<ParamField path="element" type="VirtualElement" required>
+  The virtual element to hydrate, created with `createElement`. This should match the structure of the server-rendered HTML in the container.
+</ParamField>
+
+<ParamField path="container" type="HTMLElement" required>
+  The DOM node containing server-rendered HTML. The existing content will be preserved and enhanced with interactivity.
+</ParamField>
+
+## Return Value
+
+Returns a root fiber object configured for hydration:
+
+```javascript
+{
+  dom: HTMLElement,                    // The container DOM node
+  props: {
+    children: [element]
+  },
+  alternate: Fiber | null,             // Previous root for reconciliation
+  isHydrating: true,                   // Hydration flag
+  hydrateCursor: Node | null          // Current position in DOM tree
+}
+```
+
+## Examples
+
+### Basic Hydration
+
+```javascript
+import { createElement, hydrate } from '@ryunix/core'
+
+const App = () => {
+  return createElement(
+    'div',
+    { className: 'app' },
+    createElement('h1', null, 'Hello RyunixJS'),
+    createElement('p', null, 'Hydrated from server HTML')
+  )
+}
+
+// Server rendered this HTML to the container
+const container = document.getElementById('root')
+
+// Hydrate instead of render to preserve existing HTML
+hydrate(createElement(App), container)
+```
+
+### Hydration with Interactive Components
+
+```javascript
+import { createElement, hydrate, useStore } from '@ryunix/core'
+
+const Counter = ({ initialCount = 0 }) => {
+  const [count, setCount] = useStore(initialCount)
+  
+  return createElement(
+    'div',
+    null,
+    createElement('p', null, `Count: ${count}`),
+    createElement(
+      'button',
+      { onClick: () => setCount(count + 1) },
+      'Increment'
+    )
+  )
+}
+
+// Server rendered the initial HTML with count=5
+const container = document.getElementById('app')
+
+// Hydrate with matching initial state
+hydrate(createElement(Counter, { initialCount: 5 }), container)
+// Now button clicks will work without re-rendering the initial HTML
+```
+
+### Full SSR Application
+
+```javascript
+// client.js
+import { createElement, hydrate } from '@ryunix/core'
+import App from './App'
+
+const container = document.getElementById('__ryunix')
+
+// Only hydrate if server-rendered content exists
+if (container && container.hasChildNodes()) {
+  hydrate(createElement(App), container)
+}
+```
+
+### Using with init()
+
+The `init` function automatically detects SSR and chooses hydrate vs render:
+
+```javascript
+import { createElement, init } from '@ryunix/core'
+import App from './App'
+
+// Automatically uses hydrate if RYUNIX_SSR is set and container has content
+// Otherwise falls back to render
+init(createElement(App), '__ryunix')
+```
+
+## Behavior Details
+
+### Container Preservation
+
+Unlike `render`, `hydrate` does NOT clear the container. It preserves existing DOM nodes and walks through them using the `hydrateCursor`.
+
+```javascript
+// render() behavior:
+// Before: <div id="root"><p>Server HTML</p></div>
+render(element, container)
+// After: <div id="root"><p>Client HTML</p></div> (old content removed)
+
+// hydrate() behavior:
+// Before: <div id="root"><p>Server HTML</p></div>
+hydrate(element, container)
+// After: <div id="root"><p>Server HTML</p></div> (preserved with listeners)
+```
+
+### Hydration Cursor
+
+The `hydrateCursor` tracks the current position while walking the DOM tree. The `nextValidSibling` helper skips over:
+- Empty text nodes (whitespace-only)
+- Comment nodes
+
+This ensures robust hydration even with formatted HTML from the server.
+
+### State Reconciliation
+
+During hydration:
+1. Existing DOM nodes are matched with virtual elements
+2. Event listeners are attached
+3. Component state is initialized
+4. Subsequent updates use normal reconciliation
+
+## Common Patterns
+
+### Hydration Mismatch Handling
+
+In development, RyunixJS can detect mismatches between server and client:
+
+```javascript
+import { createElement, hydrate, getState } from '@ryunix/core'
+
+const container = document.getElementById('root')
+hydrate(createElement(App), container)
+
+const state = getState()
+if (state.hydrationFailed) {
+  console.warn('Hydration mismatch detected - falling back to CSR')
+}
+```
+
+### Island Hydration
+
+Hydrate individual interactive components on an otherwise static page:
+
+```javascript
+import { createElement, hydrate } from '@ryunix/core'
+import { InteractiveWidget } from './components'
+
+// Hydrate multiple islands independently
+const islands = document.querySelectorAll('[data-ryunix-island]')
+
+islands.forEach(container => {
+  const props = JSON.parse(container.getAttribute('data-props') || '{}')
+  hydrate(createElement(InteractiveWidget, props), container)
+})
+```
+
+Or use the built-in `hydrateIslands` helper:
+
+```javascript
+import { hydrateIslands } from '@ryunix/core'
+import { Widget1, Widget2 } from './components'
+
+hydrateIslands({
+  'widget-1': Widget1,
+  'widget-2': Widget2
+})
+```
+
+### Conditional Hydration
+
+```javascript
+import { createElement, render, hydrate } from '@ryunix/core'
+import App from './App'
+
+const container = document.getElementById('root')
+const isSSR = container.hasChildNodes() && 
+              process.env.RYUNIX_SSR === 'true'
+
+if (isSSR) {
+  hydrate(createElement(App), container)
+} else {
+  render(createElement(App), container)
+}
+```
+
+## Performance Benefits
+
+Hydration provides significant performance advantages:
+
+1. **Faster First Paint**: Server sends fully rendered HTML
+2. **Better SEO**: Content is available before JavaScript loads
+3. **Progressive Enhancement**: Page is readable even if JS fails
+4. **Reduced Initial Render Work**: Client skips initial DOM creation
+
+## Related APIs
+
+- [render](/api/render) - Client-side rendering that clears the container
+- [init](/api/render) - Auto-detects SSR and chooses hydrate vs render
+- [hydrateIslands](/api/hydrate) - Hydrate multiple component islands
+- [renderToString](/api/server/renderToString) - Server-side rendering to HTML string
+- [createElement](/api/createElement) - Create virtual elements to hydrate

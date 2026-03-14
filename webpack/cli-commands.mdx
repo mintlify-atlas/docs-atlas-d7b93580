@@ -1,0 +1,285 @@
+---
+title: CLI Commands
+description: Complete reference for Ryunix CLI commands and flags
+icon: terminal
+---
+
+The Ryunix preset (`@unsetsoft/ryunix-presets`) ships with a robust command-line interface built on [yargs](https://yargs.js.org/). All commands are available through the `ryunix` binary.
+
+## Installation
+
+The CLI is automatically available after installing the preset:
+
+```bash
+npm install @unsetsoft/ryunix-presets
+```
+
+The `ryunix` binary is defined in `package.json:bin` and resolves to `/webpack/bin/index.mjs`.
+
+## Available Commands
+
+### `dev`
+
+Starts the Webpack Dev Server with Hot Module Replacement (HMR).
+
+```bash
+ryunix dev
+```
+
+<AccordionGroup>
+  <Accordion title="What it does">
+    - Sets `process.env.RYUNIX_MODE = 'development'`
+    - Dynamically finds an available port (defaults to 3000)
+    - Clears `.ryunix/cache` for a clean start
+    - Launches `webpack-dev-server` with HMR enabled
+    - Provides live-reload for SSR routes
+  </Accordion>
+  
+  <Accordion title="Flags">
+    - `--browser`: Opens the default browser automatically on server start
+  </Accordion>
+</AccordionGroup>
+
+**Example:**
+
+```bash
+ryunix dev --browser
+```
+
+**Terminal Output:**
+
+```bash
+Starting development server, please wait...
+
+  ╭──────────────── Development Server ─────────────────╮
+  │                                                      │
+  │   <Ryunix/> v1.0.26                                  │
+  │                                                      │
+  │   Ready at: http://localhost:3000/                   │
+  │   Mode:     development                              │
+  │                                                      │
+  ╰──────────────────────────────────────────────────────╯
+```
+
+**Source:** `/packages/ryunix-presets/webpack/bin/index.mjs:59-78`
+
+---
+
+### `build`
+
+Executes the production build using the Webpack Dual Compiler.
+
+```bash
+ryunix build
+```
+
+<AccordionGroup>
+  <Accordion title="What it does">
+    - Sets `process.env.RYUNIX_MODE = 'production'`
+    - Cleans previous build artifacts (except cache)
+    - Runs client and server compilers in parallel
+    - Outputs `/static` bundle (client assets)
+    - Outputs `/server` bundle (Node.js SSR bundle)
+    - Triggers SSG prerendering if `production: true` is configured
+    - Lists all API routes found in build output
+  </Accordion>
+  
+  <Accordion title="Build Output">
+    The build produces the following directories:
+    
+    - `.ryunix/static/` - Client-side assets (JS, CSS, images)
+    - `.ryunix/server/app/` - Server-side rendering components
+    - `.ryunix/server/api/` - API route handlers
+    - `.ryunix/server/app-router-server.bundle.mjs` - SSR entry point
+    - `.ryunix/cache/` - Webpack filesystem cache (preserved across builds)
+  </Accordion>
+</AccordionGroup>
+
+**Example Output:**
+
+```bash
+○  API routes (3):
+   ✔ /api/
+   ✔ /api/users
+   ✔ /api/posts
+
+✔ Compilation successful! 🎉
+Done in 12.4s
+```
+
+**Clean-Up Logic:**
+
+The build command selectively cleans directories before each build:
+
+```javascript
+clean(join(buildRoot, 'static'))
+clean(join(buildRoot, 'server', 'app'))
+clean(join(buildRoot, 'server', 'app-router-server.bundle.mjs'))
+// Note: server/api/ is cleaned by ApiRouterPlugin incrementally
+```
+
+**Source:** `/packages/ryunix-presets/webpack/bin/index.mjs:119-199`
+
+---
+
+### `start`
+
+Launches the production server using the native Node.js HTTP server.
+
+```bash
+ryunix start
+```
+
+<AccordionGroup>
+  <Accordion title="What it does">
+    - Sets `process.env.RYUNIX_MODE = 'production'`
+    - Validates that `.ryunix/static` exists (requires prior build)
+    - Starts the optimized production server on the configured port
+    - Displays server information in a formatted box
+  </Accordion>
+  
+  <Accordion title="Requirements">
+    You must run `ryunix build` before using this command.
+  </Accordion>
+</AccordionGroup>
+
+**Terminal Output:**
+
+```bash
+  ╭────────────────── Production Server ─────────────────╮
+  │                                                       │
+  │   <Ryunix/> v1.0.26                                   │
+  │                                                       │
+  │   Ready at: http://localhost:3000/                    │
+  │   Mode:     production                                │
+  │                                                       │
+  ╰───────────────────────────────────────────────────────╯
+```
+
+**Error Example:**
+
+```bash
+ryunix start
+# Error: You need build first!
+```
+
+**Source:** `/packages/ryunix-presets/webpack/bin/index.mjs:80-117`
+
+---
+
+### `lint`
+
+Runs ESLint against the configured files.
+
+```bash
+ryunix lint
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    - `--fix` or `-f`: Automatically fix problems
+  </Accordion>
+  
+  <Accordion title="Configuration">
+    By default, lints files matching:
+    - `**/*.ryx`
+    - Any additional patterns in `ryunix.config.js:eslint.files`
+    
+    Uses the internal Ryunix ESLint configuration with React plugin support.
+  </Accordion>
+</AccordionGroup>
+
+**Example:**
+
+```bash
+ryunix lint --fix
+```
+
+**Source:** `/packages/ryunix-presets/webpack/bin/index.mjs:27-57`
+
+---
+
+### `customHtml`
+
+<Warning>
+This command is **deprecated** and will be removed in future versions. When using the App Router, use `layout.ryx` for custom document structure instead.
+</Warning>
+
+Extracts the default `index.html` template to `public/index.html` for manual customization.
+
+```bash
+ryunix customHtml
+```
+
+**What it does:**
+- Copies `/webpack/template/index.html` to `public/index.html`
+- Enables the template with `legacy.template` in `ryunix.config.js`
+
+**Source:** `/packages/ryunix-presets/webpack/bin/index.mjs:202-222`
+
+---
+
+## Common Workflows
+
+<Steps>
+  <Step title="Development">
+    Start the dev server:
+    ```bash
+    ryunix dev
+    ```
+  </Step>
+  
+  <Step title="Linting">
+    Check for code issues:
+    ```bash
+    ryunix lint
+    ```
+  </Step>
+  
+  <Step title="Production Build">
+    Build for production:
+    ```bash
+    ryunix build
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    Run the production server:
+    ```bash
+    ryunix start
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Environment Variables
+
+The CLI respects these environment variables:
+
+| Variable | Description | Set By |
+|----------|-------------|--------|
+| `RYUNIX_MODE` | Current mode (`development` or `production`) | CLI commands |
+| `RYUNIX_DEBUG` | Enable debug logging | `debug: true` in config |
+| `RYUNIX_SSR` | SSR enabled status | Configuration |
+| `RYUNIX_IS_SERVER` | Server build target | Webpack DefinePlugin |
+
+---
+
+## Configuration
+
+All CLI behavior can be customized via `ryunix.config.js`:
+
+```javascript
+export default {
+  port: 3000,              // Dev server port
+  buildDir: '.ryunix',     // Build output directory
+  rootDir: 'src',          // Source directory
+  eslint: {
+    files: ['**/*.ryx'],   // Files to lint
+    rules: { /* ... */ }   // ESLint rules
+  }
+}
+```
+
+See [Configuration](/webpack/configuration) for complete options.

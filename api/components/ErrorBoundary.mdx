@@ -1,0 +1,206 @@
+---
+title: 'ErrorBoundary'
+description: 'Component that catches JavaScript errors in its child tree and displays a fallback UI'
+---
+
+## Overview
+
+`ErrorBoundary` is a native RyunixJS component that catches JavaScript errors anywhere in its child component tree, logs those errors, and displays a fallback UI instead of crashing the entire application.
+
+It hooks directly into the `performUnitOfWork` reconciler loop to catch errors during rendering, in lifecycle methods, and in constructors of the whole tree below them.
+
+## Props
+
+<ParamField path="children" type="ReactNode" required>
+  The component tree to monitor for errors.
+</ParamField>
+
+<ParamField path="fallback" type="ReactNode | (error: Error) => ReactNode" required>
+  The fallback UI to display when an error is caught. Can be either:
+  - A React element to render
+  - A function that receives the error and returns a React element
+</ParamField>
+
+## Usage
+
+### Basic fallback UI
+
+```jsx
+import { ErrorBoundary } from 'ryunixjs'
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<div>Something went wrong</div>}>
+      <MyComponent />
+    </ErrorBoundary>
+  )
+}
+```
+
+### Fallback with error details
+
+```jsx
+import { ErrorBoundary } from 'ryunixjs'
+
+function App() {
+  return (
+    <ErrorBoundary
+      fallback={(error) => (
+        <div>
+          <h1>Error occurred</h1>
+          <p>{error.message}</p>
+          <pre>{error.stack}</pre>
+        </div>
+      )}
+    >
+      <MyComponent />
+    </ErrorBoundary>
+  )
+}
+```
+
+### Nested error boundaries
+
+```jsx
+import { ErrorBoundary } from 'ryunixjs'
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<div>App-level error</div>}>
+      <Header />
+      <ErrorBoundary fallback={<div>Sidebar error</div>}>
+        <Sidebar />
+      </ErrorBoundary>
+      <ErrorBoundary fallback={<div>Content error</div>}>
+        <Content />
+      </ErrorBoundary>
+    </ErrorBoundary>
+  )
+}
+```
+
+## Behavior
+
+### Error detection
+
+The ErrorBoundary catches errors by checking the `stateError` property on the fiber during reconciliation. When an error is detected in the work-in-progress fiber:
+
+1. The reconciler sets `state.wipFiber.stateError` with the error object
+2. ErrorBoundary checks for this error during render
+3. If an error exists, it renders the fallback instead of children
+
+### Fallback rendering
+
+The fallback can be provided in two ways:
+
+**Static fallback**: A React element that renders the same UI for any error
+
+**Dynamic fallback**: A function that receives the error and can render custom UI based on error details
+
+### Internal implementation
+
+Under the hood, ErrorBoundary wraps children in a `ryunix-error-boundary-wrapper` element with `display: contents` styling to avoid affecting layout:
+
+```js
+createElement('ryunix-error-boundary-wrapper', 
+  { style: { display: 'contents' } }, 
+  children
+)
+```
+
+Source: `packages/core/src/lib/errorBoundary.js:22`
+
+## Best practices
+
+### Granular boundaries
+
+Place error boundaries at strategic points in your component tree to prevent entire sections from crashing:
+
+```jsx
+<App>
+  <ErrorBoundary fallback={<HeaderFallback />}>
+    <Header />
+  </ErrorBoundary>
+  
+  <ErrorBoundary fallback={<MainFallback />}>
+    <MainContent />
+  </ErrorBoundary>
+</App>
+```
+
+### Error logging
+
+Use the function form of fallback to log errors to an error tracking service:
+
+```jsx
+<ErrorBoundary
+  fallback={(error) => {
+    logErrorToService(error)
+    return <ErrorUI error={error} />
+  }}
+>
+  <MyComponent />
+</ErrorBoundary>
+```
+
+### Recovery mechanisms
+
+Provide users with ways to recover from errors:
+
+```jsx
+function ErrorFallback({ error }) {
+  return (
+    <div>
+      <h2>Something went wrong</h2>
+      <p>{error.message}</p>
+      <button onClick={() => window.location.reload()}>
+        Reload page
+      </button>
+    </div>
+  )
+}
+
+<ErrorBoundary fallback={(error) => <ErrorFallback error={error} />}>
+  <MyComponent />
+</ErrorBoundary>
+```
+
+## Technical details
+
+### Ryunix type marker
+
+ErrorBoundary is identified internally by the `ryunix_type` property:
+
+```js
+ErrorBoundary.ryunix_type = 'RYUNIX_ERROR_BOUNDARY'
+```
+
+This allows the reconciler to recognize and handle error boundaries specially during the render phase.
+
+### Error propagation
+
+Errors propagate up the component tree until caught by an ErrorBoundary. If no ErrorBoundary exists, the error will crash the entire application.
+
+## Limitations
+
+Error boundaries do **not** catch errors in:
+- Event handlers (use try/catch instead)
+- Asynchronous code (e.g., setTimeout, requestAnimationFrame)
+- Server-side rendering errors
+- Errors thrown in the error boundary itself
+
+For event handler errors, use try/catch:
+
+```jsx
+function MyComponent() {
+  const handleClick = () => {
+    try {
+      // risky operation
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  
+  return <button onClick={handleClick}>Click me</button>
+}
+```

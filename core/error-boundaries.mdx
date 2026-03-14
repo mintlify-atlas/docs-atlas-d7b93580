@@ -1,0 +1,557 @@
+---
+title: Error Boundaries
+description: Comprehensive guide to error handling in RyunixJS with ErrorBoundary components
+---
+
+Error Boundaries are a native RyunixJS component that catches JavaScript errors anywhere in the child component tree, logs errors, and displays a fallback UI instead of crashing the entire application.
+
+## Overview
+
+ErrorBoundary integrates directly into the `performUnitOfWork` reconciler loop to catch errors during rendering, in lifecycle methods, and in constructors.
+
+### Basic Usage
+
+```javascript
+import { ErrorBoundary, createElement } from '@unsetsoft/ryunixjs'
+
+const App = () => {
+  return createElement(
+    ErrorBoundary,
+    { 
+      fallback: createElement('div', { className: 'error' },
+        'Something went wrong. Please try again.'
+      )
+    },
+    createElement(MyComponent)
+  )
+}
+```
+
+### Dynamic Fallback
+
+The fallback can be a function that receives the error:
+
+```javascript
+const App = () => {
+  return createElement(
+    ErrorBoundary,
+    { 
+      fallback: (error) => createElement('div', null,
+        createElement('h1', null, 'Error'),
+        createElement('p', null, error.message),
+        createElement('button', 
+          { onClick: () => window.location.reload() },
+          'Reload'
+        )
+      )
+    },
+    createElement(RiskyComponent)
+  )
+}
+```
+
+## How It Works
+
+ErrorBoundary hooks into the fiber reconciliation process:
+
+### 1. Error Detection
+
+During `performUnitOfWork`, component execution is wrapped in a try-catch:
+
+```javascript
+function performUnitOfWork(fiber) {
+  try {
+    if (isFunctionComponent) {
+      updateFunctionComponent(fiber)
+    } else {
+      updateHostComponent(fiber)
+    }
+  } catch (error) {
+    // Error caught - begin recovery process
+    handleError(fiber, error)
+  }
+  
+  // Continue traversal...
+}
+```
+
+### 2. Boundary Search
+
+When an error is caught, RyunixJS traverses up the fiber tree searching for the nearest ErrorBoundary:
+
+```javascript
+const handleError = (fiber, error) => {
+  let boundaryFiber = fiber.parent
+  let foundBoundary = false
+  
+  while (boundaryFiber) {
+    if (
+      boundaryFiber.type &&
+      boundaryFiber.type.ryunix_type === 'RYUNIX_ERROR_BOUNDARY'
+    ) {
+      foundBoundary = true
+      break
+    }
+    boundaryFiber = boundaryFiber.parent
+  }
+  
+  if (foundBoundary) {
+    // Recovery logic
+  } else {
+    // Fatal error - no boundary found
+  }
+}
+```
+
+### 3. Tree Pruning
+
+When a boundary is found, corrupted children are discarded:
+
+```javascript
+if (foundBoundary) {
+  // Assign error to boundary fiber
+  boundaryFiber.stateError = error
+  
+  // Discard corrupted children
+  fiber.child = null
+  
+  // Rewind work pointer to boundary
+  return boundaryFiber
+}
+```
+
+### 4. Fallback Rendering
+
+The ErrorBoundary component checks for `stateError` and renders fallback:
+
+```javascript
+export function ErrorBoundary({ children, fallback }) {
+  const state = getState()
+  
+  if (state.wipFiber && state.wipFiber.stateError) {
+    // Error detected - render fallback
+    if (typeof fallback === 'function') {
+      return fallback(state.wipFiber.stateError)
+    }
+    return fallback
+  }
+  
+  // Normal rendering
+  return createElement(
+    'ryunix-error-boundary-wrapper',
+    { style: { display: 'contents' } },
+    children
+  )
+}
+
+ErrorBoundary.ryunix_type = 'RYUNIX_ERROR_BOUNDARY'
+```
+
+<Note>
+  The wrapper uses `display: contents` so it doesn't affect layout while still providing a boundary marker in the fiber tree.
+</Note>
+
+## Error Boundary Patterns
+
+### Nested Boundaries
+
+Use multiple error boundaries for granular error handling:
+
+```javascript
+const Dashboard = () => {
+  return createElement('div', { className: 'dashboard' },
+    // Separate boundary for header
+    createElement(
+      ErrorBoundary,
+      { fallback: createElement(HeaderFallback) },
+      createElement(Header)
+    ),
+    
+    // Separate boundary for main content
+    createElement(
+      ErrorBoundary,
+      { fallback: createElement(ContentFallback) },
+      createElement(MainContent)
+    ),
+    
+    // Separate boundary for sidebar
+    createElement(
+      ErrorBoundary,
+      { fallback: createElement(SidebarFallback) },
+      createElement(Sidebar)
+    )
+  )
+}
+```
+
+**Benefits:**
+- Isolated failures (one component error doesn't crash others)
+- Specific fallbacks for different sections
+- Better user experience
+
+### Page-Level Boundaries
+
+```javascript
+import { RouterProvider, Children } from '@unsetsoft/ryunixjs'
+
+const PageWrapper = ({ children }) => {
+  return createElement(
+    ErrorBoundary,
+    {
+      fallback: (error) => createElement('div', { className: 'page-error' },
+        createElement('h1', null, 'Page Error'),
+        createElement('p', null, error.message),
+        createElement('a', { href: '/' }, 'Go Home')
+      )
+    },
+    children
+  )
+}
+
+const App = () => {
+  return createElement(
+    RouterProvider,
+    { routes },
+    createElement(PageWrapper, null,
+      createElement(Children)
+    )
+  )
+}
+```
+
+### Error Logging
+
+Integrate with error tracking services:
+
+```javascript
+const LoggingErrorBoundary = ({ children, componentName }) => {
+  const logError = (error) => {
+    // Log to service (Sentry, LogRocket, etc.)
+    console.error(`[${componentName}] Error:`, error)
+    
+    if (typeof window !== 'undefined' && window.Sentry) {
+      window.Sentry.captureException(error, {
+        tags: { component: componentName }
+      })
+    }
+  }
+  
+  return createElement(
+    ErrorBoundary,
+    {
+      fallback: (error) => {
+        logError(error)
+        return createElement('div', { className: 'error-fallback' },
+          `Error in ${componentName}`
+        )
+      }
+    },
+    children
+  )
+}
+```
+
+### Recovery Actions
+
+Provide user actions to recover from errors:
+
+```javascript
+const RecoverableErrorBoundary = ({ children, onRetry }) => {
+  const [key, setKey] = useStore(0)
+  
+  const handleRetry = () => {
+    if (onRetry) onRetry()
+    setKey(k => k + 1) // Force remount with new key
+  }
+  
+  return createElement(
+    ErrorBoundary,
+    {
+      key, // Changing key resets the boundary
+      fallback: (error) => createElement('div', null,
+        createElement('p', null, 'An error occurred'),
+        createElement('button', { onClick: handleRetry }, 'Try Again'),
+        process.env.NODE_ENV !== 'production' &&
+          createElement('pre', null, error.stack)
+      )
+    },
+    children
+  )
+}
+```
+
+## What Error Boundaries Catch
+
+Error boundaries catch errors during:
+
+✅ **Rendering**
+```javascript
+const BuggyComponent = () => {
+  throw new Error('Render error') // Caught
+  return createElement('div')
+}
+```
+
+✅ **Component Execution**
+```javascript
+const BuggyComponent = () => {
+  const data = null
+  const value = data.property // Caught
+  return createElement('div', null, value)
+}
+```
+
+✅ **Hook Execution**
+```javascript
+const BuggyComponent = () => {
+  const data = useMemo(() => {
+    throw new Error('useMemo error') // Caught
+  }, [])
+  return createElement('div', null, data)
+}
+```
+
+## What Error Boundaries Don't Catch
+
+❌ **Event Handlers**
+```javascript
+const Component = () => {
+  const handleClick = () => {
+    throw new Error('Not caught by ErrorBoundary')
+  }
+  
+  return createElement('button', { onClick: handleClick }, 'Click')
+}
+
+// Solution: use try-catch in the handler
+const handleClick = () => {
+  try {
+    riskyOperation()
+  } catch (error) {
+    handleError(error)
+  }
+}
+```
+
+❌ **Async Code**
+```javascript
+const Component = () => {
+  useEffect(() => {
+    setTimeout(() => {
+      throw new Error('Not caught') // Happens outside render
+    }, 1000)
+  }, [])
+  
+  return createElement('div')
+}
+
+// Solution: catch async errors explicitly
+useEffect(() => {
+  const timer = setTimeout(() => {
+    try {
+      riskyOperation()
+    } catch (error) {
+      handleError(error)
+    }
+  }, 1000)
+  return () => clearTimeout(timer)
+}, [])
+```
+
+❌ **Server-Side Rendering Errors**
+```javascript
+// SSR errors need separate handling
+try {
+  const html = renderToString(element)
+} catch (error) {
+  console.error('SSR Error:', error)
+  // Handle appropriately
+}
+```
+
+<Warning>
+  Error boundaries only catch errors during the React-like render phase. Use try-catch for event handlers and async code.
+</Warning>
+
+## Advanced Patterns
+
+### Error State Management
+
+```javascript
+const App = () => {
+  const [hasError, setHasError] = useStore(false)
+  const [errorInfo, setErrorInfo] = useStore(null)
+  
+  const resetError = () => {
+    setHasError(false)
+    setErrorInfo(null)
+  }
+  
+  if (hasError) {
+    return createElement('div', { className: 'app-error' },
+      createElement('h1', null, 'Application Error'),
+      createElement('p', null, errorInfo?.message),
+      createElement('button', { onClick: resetError }, 'Reset')
+    )
+  }
+  
+  return createElement(
+    ErrorBoundary,
+    {
+      fallback: (error) => {
+        setHasError(true)
+        setErrorInfo(error)
+        return null // ErrorBoundary handles fallback
+      }
+    },
+    createElement(MainApp)
+  )
+}
+```
+
+### Conditional Boundaries
+
+```javascript
+const ConditionalBoundary = ({ enabled, children, fallback }) => {
+  if (!enabled) {
+    return children
+  }
+  
+  return createElement(
+    ErrorBoundary,
+    { fallback },
+    children
+  )
+}
+
+// Usage
+const App = () => {
+  const isDevelopment = process.env.NODE_ENV !== 'production'
+  
+  return createElement(
+    ConditionalBoundary,
+    {
+      enabled: !isDevelopment, // No boundary in dev (see full errors)
+      fallback: createElement(ProductionErrorPage)
+    },
+    createElement(MainApp)
+  )
+}
+```
+
+### Error Boundaries with Context
+
+```javascript
+const { Provider: ErrorProvider, useContext: useErrorContext } = 
+  createContext('app.errors', {})
+
+const ErrorTrackingBoundary = ({ children }) => {
+  const { reportError } = useErrorContext()
+  
+  return createElement(
+    ErrorBoundary,
+    {
+      fallback: (error) => {
+        reportError(error)
+        return createElement(ErrorFallback, { error })
+      }
+    },
+    children
+  )
+}
+
+const App = () => {
+  const reportError = (error) => {
+    // Send to analytics, logging service, etc.
+    console.error('App error:', error)
+  }
+  
+  return createElement(
+    ErrorProvider,
+    { value: { reportError } },
+    createElement(ErrorTrackingBoundary, null,
+      createElement(MainApp)
+    )
+  )
+}
+```
+
+## Best Practices
+
+### 1. Strategic Boundary Placement
+
+```javascript
+// ✅ Good - boundaries at logical component boundaries
+const App = () => {
+  return createElement('div', null,
+    createElement(ErrorBoundary, { fallback: HeaderError },
+      createElement(Header)
+    ),
+    createElement(ErrorBoundary, { fallback: MainError },
+      createElement(Main)
+    ),
+    createElement(ErrorBoundary, { fallback: FooterError },
+      createElement(Footer)
+    )
+  )
+}
+
+// ❌ Bad - single boundary wraps everything
+const App = () => {
+  return createElement(ErrorBoundary, { fallback: GenericError },
+    createElement(Header),
+    createElement(Main),
+    createElement(Footer)
+  )
+}
+```
+
+### 2. Meaningful Fallbacks
+
+```javascript
+// ✅ Good - helpful fallback with context
+const fallback = (error) => createElement('div', { className: 'error' },
+  createElement('h2', null, 'Unable to load user profile'),
+  createElement('p', null, 'Please refresh the page or contact support'),
+  createElement('button', { onClick: () => window.location.reload() }, 'Refresh'),
+  process.env.NODE_ENV !== 'production' &&
+    createElement('details', null,
+      createElement('summary', null, 'Error details'),
+      createElement('pre', null, error.stack)
+    )
+)
+
+// ❌ Bad - generic unhelpful fallback
+const fallback = 'Error'
+```
+
+### 3. Development vs Production
+
+```javascript
+const ErrorFallback = ({ error }) => {
+  if (process.env.NODE_ENV !== 'production') {
+    // Development - show full error details
+    return createElement('div', { className: 'dev-error' },
+      createElement('h1', null, error.name),
+      createElement('p', null, error.message),
+      createElement('pre', null, error.stack)
+    )
+  }
+  
+  // Production - user-friendly message
+  return createElement('div', { className: 'prod-error' },
+    createElement('h1', null, 'Something went wrong'),
+    createElement('p', null, 'We\'re working on fixing this issue.'),
+    createElement('button', 
+      { onClick: () => window.location.href = '/' },
+      'Go to Homepage'
+    )
+  )
+}
+```
+
+## Related
+
+- [Components](/core/components) - Component architecture
+- [Virtual DOM & Reconciliation](/core/virtual-dom-reconciliation) - How errors are caught in the work loop
+- [Hooks](/core/hooks) - State management for error handling

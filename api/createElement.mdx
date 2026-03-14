@@ -1,0 +1,173 @@
+---
+title: createElement
+description: Create virtual DOM elements in RyunixJS
+---
+
+## Overview
+
+The `createElement` function is the core primitive for creating virtual DOM elements in RyunixJS. It creates a virtual element object with a type, properties, and children that will later be reconciled into the actual DOM.
+
+## Signature
+
+```javascript
+createElement(type, props, ...children)
+```
+
+<ParamField path="type" type="string | function" required>
+  The type of element to create. Can be:
+  - A string for HTML elements (e.g., `'div'`, `'span'`, `'button'`)
+  - A function component
+  - A special type like `RYUNIX_TYPES.RYUNIX_FRAGMENT`
+</ParamField>
+
+<ParamField path="props" type="object">
+  Properties and attributes to apply to the element. This can include:
+  - Standard HTML attributes (`className`, `id`, `style`, etc.)
+  - Event handlers (`onClick`, `onChange`, etc.)
+  - Custom component props
+  - `children` (alternatively passed as rest parameters)
+  
+  If `null` or `undefined`, defaults to an empty object.
+</ParamField>
+
+<ParamField path="children" type="...any">
+  Child elements or text content. Children can be:
+  - Strings or numbers (converted to text elements)
+  - Virtual elements created with `createElement`
+  - Arrays of children (automatically flattened)
+  - `null`, `undefined`, `true`, or `false` (filtered out)
+  
+  Multiple children can be passed as separate arguments or in the `props.children` field.
+</ParamField>
+
+## Return Value
+
+Returns a virtual element object:
+
+```javascript
+{
+  type: string | function,
+  props: {
+    ...props,
+    children: [...normalizedChildren]
+  }
+}
+```
+
+## Examples
+
+### Creating HTML Elements
+
+```javascript
+import { createElement } from '@ryunix/core'
+
+// Simple div with text
+const element = createElement('div', null, 'Hello World')
+
+// With props and multiple children
+const button = createElement(
+  'button',
+  { 
+    className: 'btn-primary',
+    onClick: () => console.log('clicked')
+  },
+  'Click me'
+)
+
+// Nested elements
+const card = createElement(
+  'div',
+  { className: 'card' },
+  createElement('h2', null, 'Card Title'),
+  createElement('p', null, 'Card content goes here')
+)
+```
+
+### Creating Component Elements
+
+```javascript
+import { createElement, useStore } from '@ryunix/core'
+
+const Counter = ({ initialCount = 0 }) => {
+  const [count, setCount] = useStore(initialCount)
+  
+  return createElement(
+    'div',
+    null,
+    createElement('p', null, `Count: ${count}`),
+    createElement(
+      'button',
+      { onClick: () => setCount(count + 1) },
+      'Increment'
+    )
+  )
+}
+
+// Use the component
+const app = createElement(Counter, { initialCount: 10 })
+```
+
+### Working with Children
+
+```javascript
+// Children as rest parameters
+const list1 = createElement(
+  'ul',
+  null,
+  createElement('li', null, 'Item 1'),
+  createElement('li', null, 'Item 2'),
+  createElement('li', null, 'Item 3')
+)
+
+// Children in props
+const list2 = createElement('ul', {
+  children: [
+    createElement('li', null, 'Item 1'),
+    createElement('li', null, 'Item 2')
+  ]
+})
+
+// Mixed primitive and element children
+const mixed = createElement(
+  'div',
+  null,
+  'Text before ',
+  createElement('strong', null, 'bold text'),
+  ' text after'
+)
+```
+
+### Conditional Rendering
+
+```javascript
+const ConditionalComponent = ({ showMessage }) => {
+  return createElement(
+    'div',
+    null,
+    createElement('h1', null, 'Welcome'),
+    // false/null/undefined children are filtered out
+    showMessage && createElement('p', null, 'This is the message')
+  )
+}
+```
+
+## Behavior Details
+
+### Child Normalization
+
+The function automatically normalizes children:
+1. Arrays are flattened
+2. `null`, `undefined`, `true`, and `false` are filtered out
+3. Adjacent primitive values (strings/numbers) are merged into a single text element
+4. Non-object children are converted to text elements via `createTextElement`
+
+### Props Handling
+
+If `props` is `null` or `undefined`, it defaults to an empty object. Children can be specified either as rest parameters or in `props.children` - if both are provided, rest parameters take precedence.
+
+## Related APIs
+
+- [Fragment](/api/components/Fragment) - Group multiple children without a wrapper element
+- [render](/api/render) - Render elements to the DOM
+- [hydrate](/api/hydrate) - Attach to server-rendered HTML
+- [cloneElement](/api/createElement) - Clone and modify existing elements

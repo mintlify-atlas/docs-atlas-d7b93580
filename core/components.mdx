@@ -1,0 +1,199 @@
+---
+title: Components
+description: Understanding RyunixJS component architecture and built-in components
+---
+
+RyunixJS provides a powerful component system with built-in components that integrate directly with the framework's reconciler phases.
+
+## Component Types
+
+### Function Components
+
+Function components are the foundation of RyunixJS applications. They're simple JavaScript functions that return elements.
+
+```javascript
+const Greeting = ({ name }) => {
+  return createElement('h1', null, `Hello, ${name}!`)
+}
+```
+
+Under the hood, function components are processed by `updateFunctionComponent` which:
+- Sets up the fiber context for hooks
+- Executes the component function
+- Reconciles the resulting children
+- Handles hydration when applicable
+
+### Host Components
+
+Host components represent actual DOM elements (like `div`, `span`, `button`, etc.). These are handled by `updateHostComponent` which creates or reuses DOM nodes during rendering.
+
+## Built-in Components
+
+### ErrorBoundary
+
+A native component that catches JavaScript errors anywhere in its child component tree.
+
+```javascript
+import { ErrorBoundary } from '@unsetsoft/ryunixjs'
+
+const App = () => {
+  return createElement(
+    ErrorBoundary,
+    { 
+      fallback: (error) => createElement('div', null, 
+        `Error: ${error.message}`
+      )
+    },
+    createElement(MyComponent)
+  )
+}
+```
+
+**How it works:**
+- Operates inside the `performUnitOfWork` loop
+- When an error is caught during render, the reconciler climbs the `fiber.parent` chain
+- Dynamically prunes corrupted children and sets `stateError` on the boundary fiber
+- Rewinds the `wipFiber` pointer so the loop recovers safely and displays the fallback
+
+<Note>
+  ErrorBoundary only catches errors during rendering. It won't catch errors in event handlers or async code.
+</Note>
+
+### ServerBoundary
+
+Used to shield content that was rendered on the server during partial hydration.
+
+```javascript
+import { ServerBoundary } from '@unsetsoft/ryunixjs'
+
+const Page = () => {
+  return createElement(
+    'div',
+    null,
+    createElement(ServerBoundary, null, staticServerContent),
+    createElement(InteractiveWidget)
+  )
+}
+```
+
+**Key features:**
+- Used with Island Architecture via `hydrateIslands()`
+- Children inside a ServerBoundary are ignored by client-side hydration
+- Prevents hydration mismatches for server-only content
+
+## MDX Support
+
+### MDXContent
+
+Provides default styling and components for MDX content.
+
+```javascript
+import { MDXContent } from '@unsetsoft/ryunixjs'
+
+const Page = ({ children }) => {
+  return createElement(
+    MDXContent,
+    { components: customComponents },
+    children
+  )
+}
+```
+
+### MDXProvider
+
+Injects a context containing component mappings for MDX elements.
+
+```javascript
+import { MDXProvider, getMDXComponents } from '@unsetsoft/ryunixjs'
+
+const customComponents = {
+  h1: (props) => createElement('h1', { className: 'title', ...props }),
+  code: (props) => createElement('code', { className: 'highlight', ...props })
+}
+
+const App = ({ children }) => {
+  return createElement(
+    MDXProvider,
+    { value: customComponents },
+    children
+  )
+}
+```
+
+**Default components** include mappings for:
+- Headings (`h1` through `h6`)
+- Text elements (`p`, `a`, `strong`, `em`, `code`)
+- Lists (`ul`, `ol`, `li`)
+- Blocks (`blockquote`, `pre`, `hr`)
+- Tables (`table`, `thead`, `tbody`, `tr`, `th`, `td`)
+
+### getMDXComponents
+
+Utility to merge context components with custom components:
+
+```javascript
+const MyComponent = () => {
+  const components = getMDXComponents({
+    h1: CustomHeading,
+    code: CustomCode
+  })
+  // Returns merged components from context + custom overrides
+}
+```
+
+## Custom Components
+
+### Image
+
+Optimized image component:
+
+```javascript
+import { Image } from '@unsetsoft/ryunixjs'
+
+const Avatar = () => {
+  return createElement(Image, {
+    src: '/avatar.png',
+    alt: 'User avatar',
+    width: 100,
+    height: 100
+  })
+}
+```
+
+## Component Lifecycle
+
+Components in RyunixJS follow a specific lifecycle:
+
+1. **Render Phase**: Component function executes and returns elements
+2. **Reconciliation**: Children are compared with previous render
+3. **Commit Phase**: DOM mutations are applied
+4. **Effects**: `useLayoutEffect` runs synchronously, `useEffect` runs asynchronously
+
+<Tip>
+  Function components should be pure - they should return the same output for the same props.
+</Tip>
+
+## Island Components
+
+Components can be marked as islands for partial hydration:
+
+```javascript
+const Counter = ({ initialCount }) => {
+  const [count, setCount] = useStore(initialCount)
+  return createElement('button', 
+    { onClick: () => setCount(count + 1) },
+    `Count: ${count}`
+  )
+}
+
+// Mark for island hydration
+Counter.ryunix_client_id = 'Counter'
+```
+
+When rendered, this wraps the component in a `data-ryunix-island` container that can be hydrated independently.
+
+## Related
+
+- [Hooks](/core/hooks) - Learn about state and effects
+- [Rendering](/core/rendering) - Understand rendering modes
+- [Error Boundaries](/core/error-boundaries) - Deep dive into error handling

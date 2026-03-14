@@ -1,0 +1,581 @@
+---
+title: 'MDXProvider'
+description: 'Context provider for customizing MDX component rendering'
+---
+
+## Overview
+
+`MDXProvider` is a context provider that allows you to customize how MDX elements are rendered throughout your component tree. It provides a way to override default HTML elements with custom React components.
+
+This is particularly useful for:
+- Styling MDX content consistently
+- Adding functionality to standard elements
+- Creating interactive documentation
+- Implementing design systems in MDX
+
+## Props
+
+<ParamField path="value" type="Object" required>
+  An object mapping element names to React components. Keys are HTML element names (like `h1`, `p`, `code`) and values are component functions.
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The component tree that will have access to the custom MDX components.
+</ParamField>
+
+## Usage
+
+### Basic component customization
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+
+const components = {
+  h1: (props) => <h1 className="custom-heading" {...props} />,
+  p: (props) => <p className="custom-paragraph" {...props} />,
+  code: (props) => <code className="custom-code" {...props} />
+}
+
+function App({ children }) {
+  return (
+    <MDXProvider value={components}>
+      {children}
+    </MDXProvider>
+  )
+}
+```
+
+### Custom styled components
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+import { createElement } from 'ryunixjs'
+
+const StyledHeading = (props) => {
+  return createElement('h1', {
+    ...props,
+    style: {
+      color: '#6366f1',
+      fontSize: '2.5rem',
+      fontWeight: 'bold',
+      marginBottom: '1rem'
+    }
+  })
+}
+
+const StyledLink = (props) => {
+  return createElement('a', {
+    ...props,
+    style: {
+      color: '#818cf8',
+      textDecoration: 'none'
+    }
+  })
+}
+
+const components = {
+  h1: StyledHeading,
+  a: StyledLink
+}
+
+function MDXLayout({ children }) {
+  return (
+    <MDXProvider value={components}>
+      {children}
+    </MDXProvider>
+  )
+}
+```
+
+### Interactive components
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+import { useStore } from 'ryunixjs/hooks'
+
+function InteractiveCode({ children, ...props }) {
+  const [copied, setCopied] = useStore(false)
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  
+  return (
+    <div className="code-block">
+      <code {...props}>{children}</code>
+      <button onClick={handleCopy}>
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+    </div>
+  )
+}
+
+const components = {
+  code: InteractiveCode
+}
+
+function App({ children }) {
+  return (
+    <MDXProvider value={components}>
+      {children}
+    </MDXProvider>
+  )
+}
+```
+
+### Nested providers
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+
+const globalComponents = {
+  h1: (props) => <h1 className="global-h1" {...props} />,
+  p: (props) => <p className="global-p" {...props} />
+}
+
+const articleComponents = {
+  h1: (props) => <h1 className="article-h1" {...props} />,
+  // p will inherit from global
+}
+
+function App({ children }) {
+  return (
+    <MDXProvider value={globalComponents}>
+      <Header />
+      <MDXProvider value={articleComponents}>
+        <Article />
+      </MDXProvider>
+      <Footer />
+    </MDXProvider>
+  )
+}
+```
+
+## Helper functions
+
+### useMDXComponents
+
+Hook to access the current MDX components from context:
+
+```jsx
+import { useMDXComponents } from 'ryunixjs'
+
+function MyComponent() {
+  const components = useMDXComponents()
+  const CustomH1 = components.h1
+  
+  return <CustomH1>Hello World</CustomH1>
+}
+```
+
+### getMDXComponents
+
+Function to merge context components with additional components:
+
+```jsx
+import { getMDXComponents } from 'ryunixjs'
+
+function MyMDXComponent({ components: customComponents }) {
+  const components = getMDXComponents(customComponents)
+  
+  // components now contains both context and custom components
+  return <div>{/* use components */}</div>
+}
+```
+
+## Default components
+
+RyunixJS provides a set of default MDX components with optimized rendering:
+
+### Headings
+
+```jsx
+const defaultComponents = {
+  h1: (props) => createElement('h1', { ...props }),
+  h2: (props) => createElement('h2', { ...props }),
+  h3: (props) => createElement('h3', { ...props }),
+  h4: (props) => createElement('h4', { ...props }),
+  h5: (props) => createElement('h5', { ...props }),
+  h6: (props) => createElement('h6', { ...props })
+}
+```
+
+### Text elements
+
+```jsx
+const defaultComponents = {
+  p: (props) => createElement('p', { ...props }),
+  a: (props) => createElement('a', { ...props }),
+  strong: (props) => createElement('strong', { ...props }),
+  em: (props) => createElement('em', { ...props }),
+  code: (props) => createElement('code', { ...props })
+}
+```
+
+### Lists
+
+```jsx
+const defaultComponents = {
+  ul: (props) => createElement('ul', { ...props }),
+  ol: (props) => createElement('ol', { ...props }),
+  li: (props) => createElement('li', { ...props })
+}
+```
+
+### Blocks
+
+```jsx
+const defaultComponents = {
+  blockquote: (props) => createElement('blockquote', { ...props }),
+  pre: (props) => createElement('pre', { ...props }),
+  hr: (props) => createElement('hr', { ...props })
+}
+```
+
+### Tables
+
+```jsx
+const defaultComponents = {
+  table: (props) => createElement('table', { ...props }),
+  thead: (props) => createElement('thead', { ...props }),
+  tbody: (props) => createElement('tbody', { ...props }),
+  tr: (props) => createElement('tr', { ...props }),
+  th: (props) => createElement('th', { ...props }),
+  td: (props) => createElement('td', { ...props })
+}
+```
+
+### Media
+
+```jsx
+const defaultComponents = {
+  img: (props) => createElement('img', { ...props })
+}
+```
+
+Source: `packages/core/src/lib/components.js:127-163`
+
+## MDXContent wrapper
+
+RyunixJS provides an `MDXContent` component for wrapping MDX content:
+
+```jsx
+import { MDXContent } from 'ryunixjs'
+
+const customComponents = {
+  h1: CustomHeading,
+  code: CustomCode
+}
+
+function Page({ children }) {
+  return (
+    <MDXContent components={customComponents}>
+      {children}
+    </MDXContent>
+  )
+}
+```
+
+MDXContent automatically:
+- Merges provided components with context components
+- Wraps content in a div container
+- Applies the MDXProvider context
+
+Source: `packages/core/src/lib/components.js:169-177`
+
+## Common patterns
+
+### Documentation site components
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+
+function CodeBlock({ children, className }) {
+  const language = className?.replace('language-', '')
+  
+  return (
+    <pre className={`language-${language}`}>
+      <code>{children}</code>
+    </pre>
+  )
+}
+
+function Callout({ type, children }) {
+  return (
+    <div className={`callout callout-${type}`}>
+      {children}
+    </div>
+  )
+}
+
+const components = {
+  pre: CodeBlock,
+  Note: ({ children }) => <Callout type="note">{children}</Callout>,
+  Warning: ({ children }) => <Callout type="warning">{children}</Callout>
+}
+
+function DocsLayout({ children }) {
+  return (
+    <MDXProvider value={components}>
+      <div className="docs-content">
+        {children}
+      </div>
+    </MDXProvider>
+  )
+}
+```
+
+### Responsive images
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+
+function ResponsiveImage({ src, alt, ...props }) {
+  return (
+    <figure>
+      <img 
+        src={src} 
+        alt={alt} 
+        loading="lazy"
+        style={{ maxWidth: '100%', height: 'auto' }}
+        {...props}
+      />
+      {alt && <figcaption>{alt}</figcaption>}
+    </figure>
+  )
+}
+
+const components = {
+  img: ResponsiveImage
+}
+
+function App({ children }) {
+  return (
+    <MDXProvider value={components}>
+      {children}
+    </MDXProvider>
+  )
+}
+```
+
+### Analytics integration
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+
+function TrackedLink({ href, children, ...props }) {
+  const handleClick = () => {
+    trackEvent('link_click', { href })
+  }
+  
+  return (
+    <a href={href} onClick={handleClick} {...props}>
+      {children}
+    </a>
+  )
+}
+
+const components = {
+  a: TrackedLink
+}
+
+function App({ children }) {
+  return (
+    <MDXProvider value={components}>
+      {children}
+    </MDXProvider>
+  )
+}
+```
+
+### Design system integration
+
+```jsx
+import { MDXProvider } from 'ryunixjs'
+import { Heading, Text, Link } from './design-system'
+
+const components = {
+  h1: (props) => <Heading level={1} {...props} />,
+  h2: (props) => <Heading level={2} {...props} />,
+  h3: (props) => <Heading level={3} {...props} />,
+  p: (props) => <Text {...props} />,
+  a: (props) => <Link {...props} />
+}
+
+function App({ children }) {
+  return (
+    <MDXProvider value={components}>
+      {children}
+    </MDXProvider>
+  )
+}
+```
+
+## Implementation details
+
+### Context creation
+
+MDXProvider is created using RyunixJS's `createContext`:
+
+```js
+const { Provider: MDXProvider, useContext: useMDXComponents } = createContext(
+  'ryunix.mdx',
+  {}
+)
+```
+
+Source: `packages/core/src/lib/components.js:106-109`
+
+### Component merging
+
+When using nested providers or getMDXComponents, components are merged:
+
+```js
+const getMDXComponents = (components) => {
+  const contextComponents = useMDXComponents()
+  return {
+    ...contextComponents,
+    ...components
+  }
+}
+```
+
+This allows child providers to override parent components while inheriting unspecified ones.
+
+Source: `packages/core/src/lib/components.js:116-122`
+
+## Best practices
+
+### Provide components at the root
+
+Set up your MDX components once at the application root:
+
+```jsx
+// Good
+function App() {
+  return (
+    <MDXProvider value={components}>
+      <Router />
+    </MDXProvider>
+  )
+}
+
+// Less optimal - setting up on each page
+function Page() {
+  return (
+    <MDXProvider value={components}>
+      <PageContent />
+    </MDXProvider>
+  )
+}
+```
+
+### Keep components pure
+
+MDX component overrides should be pure and predictable:
+
+```jsx
+// Good - pure component
+const CustomHeading = (props) => (
+  <h1 className="heading" {...props} />
+)
+
+// Avoid - side effects in render
+const BadHeading = (props) => {
+  trackPageView() // Side effect!
+  return <h1 {...props} />
+}
+```
+
+### Use semantic HTML
+
+Even when customizing, maintain semantic HTML:
+
+```jsx
+// Good - still renders h1
+const CustomH1 = (props) => (
+  <h1 className="custom" {...props} />
+)
+
+// Bad - changes semantic meaning
+const BadH1 = (props) => (
+  <div className="looks-like-h1" {...props} />
+)
+```
+
+### Spread props consistently
+
+Always spread props to maintain MDX functionality:
+
+```jsx
+// Good - preserves all props
+const Component = ({ className, ...props }) => (
+  <div className={`custom ${className}`} {...props} />
+)
+
+// Bad - drops unknown props
+const Bad = ({ children }) => (
+  <div>{children}</div>
+)
+```
+
+## Performance
+
+### Component memoization
+
+Memoize component overrides to prevent unnecessary re-renders:
+
+```jsx
+import { useMemo } from 'ryunixjs/hooks'
+
+function App() {
+  const components = useMemo(() => ({
+    h1: (props) => <h1 className="heading" {...props} />,
+    p: (props) => <p className="paragraph" {...props} />
+  }), [])
+  
+  return (
+    <MDXProvider value={components}>
+      {/* content */}
+    </MDXProvider>
+  )
+}
+```
+
+### Avoid inline component definitions
+
+```jsx
+// Bad - creates new component on every render
+<MDXProvider value={{
+  h1: (props) => <h1 className="heading" {...props} />
+}}>
+  {children}
+</MDXProvider>
+
+// Good - stable component reference
+const components = {
+  h1: (props) => <h1 className="heading" {...props} />
+}
+
+<MDXProvider value={components}>
+  {children}
+</MDXProvider>
+```
+
+## API exports
+
+Available exports for MDX support:
+
+```js
+import {
+  MDXProvider,        // Context provider
+  useMDXComponents,   // Hook to access components
+  getMDXComponents,   // Function to merge components
+  MDXContent,         // Wrapper component
+  defaultComponents   // Default component mappings
+} from 'ryunixjs'
+```
+
+Source: `packages/core/src/lib/components.js:179-195`

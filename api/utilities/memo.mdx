@@ -1,0 +1,319 @@
+---
+title: "memo"
+description: "Memoize components to prevent unnecessary re-renders and optimize performance"
+icon: "clock"
+---
+
+## Overview
+
+`memo()` wraps a component to skip re-rendering when props haven't changed, similar to `React.memo()`.
+
+## Signature
+
+```javascript
+memo(Component: Function, arePropsEqual?: Function): Function
+```
+
+<ParamField path="Component" type="Function" required>
+  The function component to memoize.
+</ParamField>
+
+<ParamField path="arePropsEqual" type="Function">
+  Optional custom comparison function. Receives `(prevProps, nextProps)` and should return `true` if props are equal. Defaults to `shallowEqual`.
+</ParamField>
+
+## Return Value
+
+Returns a memoized version of the component that only re-renders when props change.
+
+## Usage
+
+### Basic Memoization
+
+```javascript ExpensiveComponent.jsx
+import { memo } from '@unsetsoft/ryunixjs'
+
+const ExpensiveComponent = memo(({ value }) => {
+  console.log('Rendering ExpensiveComponent')
+  
+  // Expensive calculations
+  const result = computeExpensiveValue(value)
+  
+  return <div>{result}</div>
+})
+
+export default ExpensiveComponent
+```
+
+### With Parent Component
+
+```javascript App.jsx
+import { useStore } from '@unsetsoft/ryunixjs'
+import ExpensiveComponent from './ExpensiveComponent'
+
+function App() {
+  const [count, setCount] = useStore(0)
+  const [value] = useStore(100)
+  
+  return (
+    <div>
+      <button onClick={() => setCount(count + 1)}>
+        Count: {count}
+      </button>
+      
+      {/* ExpensiveComponent only re-renders when value changes */}
+      <ExpensiveComponent value={value} />
+    </div>
+  )
+}
+```
+
+### Custom Comparison Function
+
+```javascript
+import { memo } from '@unsetsoft/ryunixjs'
+
+const UserCard = memo(
+  ({ user }) => {
+    return (
+      <div>
+        <h2>{user.name}</h2>
+        <p>{user.email}</p>
+      </div>
+    )
+  },
+  (prevProps, nextProps) => {
+    // Only re-render if user ID changes
+    return prevProps.user.id === nextProps.user.id
+  }
+)
+```
+
+### With Deep Equality
+
+```javascript
+import { memo, deepEqual } from '@unsetsoft/ryunixjs'
+
+const ConfigPanel = memo(
+  ({ config }) => {
+    return <div>{JSON.stringify(config)}</div>
+  },
+  deepEqual  // Use deep comparison for nested objects
+)
+```
+
+## Comparison Functions
+
+### shallowEqual (Default)
+
+Compares props using `Object.is()` for each key:
+
+```javascript
+const shallowEqual = (prevProps, nextProps) => {
+  const prevKeys = Object.keys(prevProps)
+  const nextKeys = Object.keys(nextProps)
+
+  if (prevKeys.length !== nextKeys.length) return false
+
+  return prevKeys.every((key) => Object.is(prevProps[key], nextProps[key]))
+}
+```
+
+Source: `memo.js:27-34`
+
+### deepEqual
+
+Recursively compares nested objects:
+
+```javascript
+const deepEqual = (a, b) => {
+  if (a === b) return true
+  if (a == null || b == null) return false
+  if (typeof a !== 'object' || typeof b !== 'object') return false
+
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+
+  if (keysA.length !== keysB.length) return false
+
+  return keysA.every((key) => deepEqual(a[key], b[key]))
+}
+```
+
+Source: `memo.js:39-50`
+
+<Warning>
+  `deepEqual` can be expensive for large nested objects. Use it carefully.
+</Warning>
+
+## Common Patterns
+
+### Memoizing List Items
+
+```javascript
+import { memo } from '@unsetsoft/ryunixjs'
+
+const ListItem = memo(({ item, onDelete }) => {
+  return (
+    <li>
+      {item.name}
+      <button onClick={() => onDelete(item.id)}>Delete</button>
+    </li>
+  )
+})
+
+function List({ items, onDelete }) {
+  return (
+    <ul>
+      {items.map(item => (
+        <ListItem key={item.id} item={item} onDelete={onDelete} />
+      ))}
+    </ul>
+  )
+}
+```
+
+<Note>
+  Combine `memo()` with `useCallback()` for event handlers to prevent breaking memoization.
+</Note>
+
+### With useCallback
+
+```javascript
+import { memo, useStore, useCallback } from '@unsetsoft/ryunixjs'
+
+const Child = memo(({ onClick }) => {
+  console.log('Child rendered')
+  return <button onClick={onClick}>Click Me</button>
+})
+
+function Parent() {
+  const [count, setCount] = useStore(0)
+  
+  // Memoize callback to prevent Child re-renders
+  const handleClick = useCallback(() => {
+    console.log('Clicked')
+  }, [])
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+      <Child onClick={handleClick} />
+    </div>
+  )
+}
+```
+
+### Conditional Memoization
+
+```javascript
+import { memo } from '@unsetsoft/ryunixjs'
+
+function createMemoizedComponent(shouldMemoize) {
+  const Component = ({ data }) => {
+    return <div>{data}</div>
+  }
+  
+  return shouldMemoize ? memo(Component) : Component
+}
+
+const FastComponent = createMemoizedComponent(true)
+const SlowComponent = createMemoizedComponent(false)
+```
+
+## When to Use memo()
+
+<CardGroup cols={2}>
+  <Card title="Use When" icon="check" color="green">
+    - Component re-renders often with same props
+    - Rendering is expensive (heavy computation)
+    - Large lists with many items
+    - Pure presentation components
+  </Card>
+  <Card title="Avoid When" icon="xmark" color="red">
+    - Props change frequently
+    - Component is already fast
+    - Simple components (overhead > benefit)
+    - Props contain new object/function references
+  </Card>
+</CardGroup>
+
+## Performance Considerations
+
+### Overhead
+
+`memo()` adds a small performance cost for prop comparison. Only use it when the component is expensive to render.
+
+### Props with Functions
+
+Be careful with function props:
+
+```javascript
+// ❌ Bad: Creates new function on every render
+function Parent() {
+  return <MemoChild onClick={() => console.log('click')} />
+}
+
+// ✅ Good: Memoize function with useCallback
+function Parent() {
+  const handleClick = useCallback(() => console.log('click'), [])
+  return <MemoChild onClick={handleClick} />
+}
+```
+
+### Props with Objects
+
+```javascript
+// ❌ Bad: Creates new object on every render
+function Parent() {
+  return <MemoChild config={{ theme: 'dark' }} />
+}
+
+// ✅ Good: Memoize object with useMemo
+function Parent() {
+  const config = useMemo(() => ({ theme: 'dark' }), [])
+  return <MemoChild config={config} />
+}
+```
+
+## Debugging
+
+### Check Re-renders
+
+```javascript
+const DebugComponent = memo(
+  ({ value }) => {
+    console.log('Rendering with value:', value)
+    return <div>{value}</div>
+  },
+  (prev, next) => {
+    const equal = prev.value === next.value
+    if (!equal) {
+      console.log('Props changed:', { prev, next })
+    }
+    return equal
+  }
+)
+```
+
+### Display Name
+
+Memoized components automatically get a display name for debugging:
+
+```javascript
+const MyComponent = memo(function MyComponent(props) {
+  return <div>Hello</div>
+})
+
+console.log(MyComponent.displayName)
+// Output: "Memo(MyComponent)"
+```
+
+Source: `memo.js:20`
+
+## See Also
+
+- [`useMemo()`](/api/hooks/useMemo) - Memoize values
+- [`useCallback()`](/api/hooks/useCallback) - Memoize functions
+- [Performance Optimization Guide](/core/state-management#performance-optimization)

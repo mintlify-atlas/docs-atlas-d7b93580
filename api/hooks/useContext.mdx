@@ -1,0 +1,408 @@
+---
+title: 'useContext'
+description: 'Access context values from providers'
+icon: 'share-nodes'
+---
+
+## Overview
+
+`useContext` is part of the Context API in RyunixJS, allowing you to share data across the component tree without prop drilling. Use `createContext` to create a context, then `useContext` to consume its value.
+
+## Creating Context
+
+### createContext
+
+```javascript
+const { Provider, useContext } = createContext(contextId, defaultValue)
+```
+
+<ParamField path="contextId" type="string">
+  Optional unique identifier for the context. Defaults to `RYUNIX_TYPES.RYUNIX_CONTEXT`.
+</ParamField>
+
+<ParamField path="defaultValue" type="any">
+  Optional default value returned when no Provider is found in the tree. Defaults to `{}`.
+</ParamField>
+
+### Return Value
+
+Returns an object with:
+- `Provider` - Component to provide context value
+- `useContext` - Hook to consume context value
+
+## Usage
+
+### Basic Theme Context
+
+```javascript
+import { createContext, useStore } from 'ryunix'
+
+// Create context
+const ThemeContext = createContext('theme', { mode: 'light' })
+
+function App() {
+  const [theme, setTheme] = useStore({ mode: 'light' })
+
+  const toggleTheme = () => {
+    setTheme({
+      mode: theme.mode === 'light' ? 'dark' : 'light'
+    })
+  }
+
+  return (
+    <ThemeContext.Provider value={theme}>
+      <div>
+        <button onClick={toggleTheme}>Toggle Theme</button>
+        <Content />
+      </div>
+    </ThemeContext.Provider>
+  )
+}
+
+function Content() {
+  // Consume context
+  const theme = ThemeContext.useContext()
+
+  return (
+    <div style={{
+      background: theme.mode === 'dark' ? '#333' : '#fff',
+      color: theme.mode === 'dark' ? '#fff' : '#000'
+    }}>
+      Current theme: {theme.mode}
+    </div>
+  )
+}
+```
+
+### User Authentication Context
+
+```javascript
+const AuthContext = createContext('auth', {
+  user: null,
+  isAuthenticated: false
+})
+
+function AuthProvider({ children }) {
+  const [auth, setAuth] = useStore({
+    user: null,
+    isAuthenticated: false
+  })
+
+  const login = (user) => {
+    setAuth({ user, isAuthenticated: true })
+  }
+
+  const logout = () => {
+    setAuth({ user: null, isAuthenticated: false })
+  }
+
+  const value = { ...auth, login, logout }
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+function UserProfile() {
+  const { user, isAuthenticated, logout } = AuthContext.useContext()
+
+  if (!isAuthenticated) {
+    return <div>Please log in</div>
+  }
+
+  return (
+    <div>
+      <p>Welcome, {user.name}</p>
+      <button onClick={logout}>Logout</button>
+    </div>
+  )
+}
+```
+
+### Multiple Contexts
+
+```javascript
+const ThemeContext = createContext('theme')
+const LanguageContext = createContext('language')
+const UserContext = createContext('user')
+
+function App() {
+  const [theme, setTheme] = useStore('light')
+  const [language, setLanguage] = useStore('en')
+  const [user, setUser] = useStore(null)
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      <LanguageContext.Provider value={{ language, setLanguage }}>
+        <UserContext.Provider value={{ user, setUser }}>
+          <MainContent />
+        </UserContext.Provider>
+      </LanguageContext.Provider>
+    </ThemeContext.Provider>
+  )
+}
+
+function MainContent() {
+  const { theme } = ThemeContext.useContext()
+  const { language } = LanguageContext.useContext()
+  const { user } = UserContext.useContext()
+
+  return (
+    <div>
+      <p>Theme: {theme}</p>
+      <p>Language: {language}</p>
+      <p>User: {user?.name || 'Guest'}</p>
+    </div>
+  )
+}
+```
+
+### Form Context
+
+```javascript
+const FormContext = createContext('form', {
+  values: {},
+  errors: {},
+  touched: {}
+})
+
+function Form({ onSubmit, children }) {
+  const [formState, setFormState] = useStore({
+    values: {},
+    errors: {},
+    touched: {}
+  })
+
+  const setFieldValue = (name, value) => {
+    setFormState(prev => ({
+      ...prev,
+      values: { ...prev.values, [name]: value }
+    }))
+  }
+
+  const setFieldError = (name, error) => {
+    setFormState(prev => ({
+      ...prev,
+      errors: { ...prev.errors, [name]: error }
+    }))
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSubmit(formState.values)
+  }
+
+  const contextValue = {
+    ...formState,
+    setFieldValue,
+    setFieldError
+  }
+
+  return (
+    <FormContext.Provider value={contextValue}>
+      <form onSubmit={handleSubmit}>
+        {children}
+      </form>
+    </FormContext.Provider>
+  )
+}
+
+function Input({ name, label }) {
+  const { values, errors, setFieldValue } = FormContext.useContext()
+
+  return (
+    <div>
+      <label>{label}</label>
+      <input
+        value={values[name] || ''}
+        onChange={(e) => setFieldValue(name, e.target.value)}
+      />
+      {errors[name] && <span>{errors[name]}</span>}
+    </div>
+  )
+}
+```
+
+### Settings Context with Local Storage
+
+```javascript
+const SettingsContext = createContext('settings', {
+  notifications: true,
+  darkMode: false,
+  language: 'en'
+})
+
+function SettingsProvider({ children }) {
+  const [settings, setSettings] = useStore(() => {
+    const saved = localStorage.getItem('settings')
+    return saved ? JSON.parse(saved) : {
+      notifications: true,
+      darkMode: false,
+      language: 'en'
+    }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('settings', JSON.stringify(settings))
+  }, [settings])
+
+  const updateSetting = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  return (
+    <SettingsContext.Provider value={{ settings, updateSetting }}>
+      {children}
+    </SettingsContext.Provider>
+  )
+}
+```
+
+## Server-Side Rendering
+
+During SSR, contexts are stored in `state.ssrContexts`:
+
+```javascript
+if (state.isServerRendering) {
+  return (state.ssrContexts && state.ssrContexts[ctxID] !== undefined)
+    ? state.ssrContexts[ctxID]
+    : defaultValue
+}
+```
+
+This ensures consistent behavior between server and client rendering.
+
+## Implementation Details
+
+### Provider Component
+
+The Provider is created using `createElement` with a special type:
+
+```javascript
+const Provider = ({ value, children }) => {
+  return createElement(
+    RYUNIX_TYPES.RYUNIX_CONTEXT,
+    { value, children, _contextId: contextId },
+    ...flattenArray([children])
+  )
+}
+```
+
+### Context Lookup
+
+`useContext` walks up the fiber tree to find the nearest provider:
+
+```javascript
+let fiber = state.wipFiber
+
+while (fiber) {
+  if (fiber._contextId === ctxID && fiber._contextValue !== undefined) {
+    return fiber._contextValue
+  }
+  if (
+    fiber.type?._contextId === ctxID &&
+    fiber.props?.value !== undefined
+  ) {
+    return fiber.props.value
+  }
+  fiber = fiber.parent
+}
+return defaultValue
+```
+
+## Best Practices
+
+1. **Use unique context IDs** - Prevents conflicts between different contexts
+2. **Memoize context values** - Wrap provider values in `useMemo` to prevent unnecessary re-renders
+3. **Separate concerns** - Create multiple focused contexts instead of one large context
+4. **Provide defaults** - Always provide meaningful default values
+5. **Custom hooks** - Wrap `useContext` in custom hooks for better API
+
+### Optimized Provider Pattern
+
+```javascript
+function OptimizedProvider({ children }) {
+  const [state, setState] = useStore(initialState)
+
+  // Memoize to prevent child re-renders when parent re-renders
+  const value = useMemo(() => ({
+    state,
+    setState
+  }), [state])
+
+  return (
+    <MyContext.Provider value={value}>
+      {children}
+    </MyContext.Provider>
+  )
+}
+```
+
+### Custom Hook Pattern
+
+```javascript
+const ThemeContext = createContext('theme')
+
+// Export custom hook instead of exposing useContext directly
+export function useTheme() {
+  const context = ThemeContext.useContext()
+  if (!context) {
+    throw new Error('useTheme must be used within ThemeProvider')
+  }
+  return context
+}
+
+export function ThemeProvider({ children }) {
+  // ...
+  return (
+    <ThemeContext.Provider value={value}>
+      {children}
+    </ThemeContext.Provider>
+  )
+}
+```
+
+## Common Patterns
+
+### Computed Values
+
+```javascript
+function DataProvider({ children }) {
+  const [data, setData] = useStore([])
+
+  const value = useMemo(() => ({
+    data,
+    setData,
+    count: data.length,
+    isEmpty: data.length === 0
+  }), [data])
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>
+}
+```
+
+### Actions Pattern
+
+```javascript
+function StoreProvider({ children }) {
+  const [state, setState] = useStore(initialState)
+
+  const actions = useMemo(() => ({
+    increment: () => setState(prev => ({ ...prev, count: prev.count + 1 })),
+    decrement: () => setState(prev => ({ ...prev, count: prev.count - 1 })),
+    reset: () => setState(initialState)
+  }), [])
+
+  const value = useMemo(() => ({ state, actions }), [state, actions])
+
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+}
+```
+
+## Related Hooks
+
+- [useStore](/api/hooks/useStore) - Often used within providers to manage context state
+- [useMemo](/api/hooks/useMemo) - Optimize context values to prevent re-renders
+- [useRouter](/api/hooks/useRouter) - Built on context internally

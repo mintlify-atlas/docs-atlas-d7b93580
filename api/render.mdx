@@ -1,0 +1,191 @@
+---
+title: render
+description: Render RyunixJS elements to the DOM
+---
+
+## Overview
+
+The `render` function mounts a RyunixJS element into a DOM container and schedules the initial render work. This is the primary method for client-side rendering (CSR) in RyunixJS applications.
+
+<Warning>
+  `render` clears the container before rendering. If you have server-rendered HTML and want to preserve it, use [`hydrate`](/api/hydrate) instead.
+</Warning>
+
+## Signature
+
+```javascript
+render(element, container)
+```
+
+<ParamField path="element" type="VirtualElement" required>
+  The virtual element to render, typically created with `createElement`. This is the root element of your application or component tree.
+</ParamField>
+
+<ParamField path="container" type="HTMLElement" required>
+  The DOM node where the element will be rendered. The container will be cleared before rendering to avoid duplication.
+</ParamField>
+
+## Return Value
+
+Returns a root fiber object:
+
+```javascript
+{
+  dom: HTMLElement,           // The container DOM node
+  props: {
+    children: [element]
+  },
+  alternate: Fiber | null,    // Previous root for reconciliation
+  isHydrating: false,         // Always false for render
+  hydrateCursor: null         // Always null for render
+}
+```
+
+## Examples
+
+### Basic Rendering
+
+```javascript
+import { createElement, render } from '@ryunix/core'
+
+const App = () => {
+  return createElement(
+    'div',
+    { className: 'app' },
+    createElement('h1', null, 'Hello RyunixJS'),
+    createElement('p', null, 'Welcome to your application')
+  )
+}
+
+// Get the container
+const container = document.getElementById('root')
+
+// Render the app
+render(createElement(App), container)
+```
+
+### Rendering with State
+
+```javascript
+import { createElement, render, useStore } from '@ryunix/core'
+
+const Counter = () => {
+  const [count, setCount] = useStore(0)
+  
+  return createElement(
+    'div',
+    null,
+    createElement('p', null, `Count: ${count}`),
+    createElement(
+      'button',
+      { onClick: () => setCount(count + 1) },
+      'Increment'
+    ),
+    createElement(
+      'button',
+      { onClick: () => setCount(count - 1) },
+      'Decrement'
+    )
+  )
+}
+
+const container = document.getElementById('app')
+render(createElement(Counter), container)
+```
+
+### Rendering Static Content
+
+```javascript
+import { createElement, render } from '@ryunix/core'
+
+// Simple static content
+const header = createElement(
+  'header',
+  { className: 'site-header' },
+  createElement('h1', null, 'My Website'),
+  createElement('nav', null,
+    createElement('a', { href: '/' }, 'Home'),
+    createElement('a', { href: '/about' }, 'About')
+  )
+)
+
+render(header, document.querySelector('.header-container'))
+```
+
+### Multiple Render Calls
+
+```javascript
+import { createElement, render } from '@ryunix/core'
+
+// You can render different components to different containers
+const Header = () => createElement('header', null, 'Site Header')
+const Sidebar = () => createElement('aside', null, 'Sidebar Content')
+const Main = () => createElement('main', null, 'Main Content')
+
+render(createElement(Header), document.getElementById('header'))
+render(createElement(Sidebar), document.getElementById('sidebar'))
+render(createElement(Main), document.getElementById('main'))
+```
+
+## Behavior Details
+
+### Container Clearing
+
+Before rendering, `render` calls `clearContainer(container)` to remove all existing DOM nodes. This prevents duplication when re-rendering to the same container.
+
+```javascript
+// First render
+render(createElement('div', null, 'First'), container)
+
+// Second render - container is cleared first
+render(createElement('div', null, 'Second'), container)
+// Result: Only "Second" is visible
+```
+
+### Work Scheduling
+
+The `render` function schedules work using RyunixJS's concurrent rendering system. The actual DOM updates happen asynchronously through the work loop, allowing the browser to remain responsive.
+
+### Reconciliation
+
+On subsequent renders to the same container, RyunixJS uses the `alternate` fiber reference to perform efficient reconciliation, updating only what changed in the DOM.
+
+## Common Patterns
+
+### Using with init()
+
+For most applications, use the `init` function instead, which automatically handles both CSR and hydration:
+
+```javascript
+import { createElement, init } from '@ryunix/core'
+
+const App = () => createElement('div', null, 'My App')
+
+// init automatically chooses render or hydrate based on environment
+init(createElement(App), '__ryunix')
+```
+
+### Error Handling
+
+```javascript
+import { createElement, render } from '@ryunix/core'
+
+const container = document.getElementById('root')
+
+if (!container) {
+  console.error('Container not found')
+} else {
+  try {
+    render(createElement(App), container)
+  } catch (error) {
+    console.error('Render failed:', error)
+  }
+}
+```
+
+## Related APIs
+
+- [hydrate](/api/hydrate) - Attach to server-rendered HTML without clearing
+- [init](/api/render) - Higher-level initialization that auto-detects SSR
+- [createElement](/api/createElement) - Create virtual elements to render
+- [safeRender](/api/render) - Render with error handling

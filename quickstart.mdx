@@ -1,80 +1,262 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Build your first RyunixJS application in minutes"
+icon: "rocket"
 ---
 
-## Get started in three steps
+## Create Your First App
 
-Get your documentation site running locally and make your first customization.
+Get started with RyunixJS by creating a new application using the official create-ryunix-app (CRA) tool.
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Create a new project">
+    Run the create command with your preferred package manager:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    <CodeGroup>
+    ```bash npm
+    npx @unsetsoft/cra@latest my-ryunix-app
+    ```
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    ```bash yarn
+    yarn create @unsetsoft/cra my-ryunix-app
+    ```
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash pnpm
+    pnpm create @unsetsoft/cra my-ryunix-app
+    ```
+    </CodeGroup>
+    
+    The CLI will prompt you for configuration options like Tailwind CSS, ESLint, and VS Code settings.
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Navigate to your project">
+    ```bash
+    cd my-ryunix-app
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Start the development server">
+    <CodeGroup>
+    ```bash npm
+    npm run dev
+    ```
+    
+    ```bash yarn
+    yarn dev
+    ```
+    
+    ```bash pnpm
+    pnpm dev
+    ```
+    </CodeGroup>
+    
+    Your app will be running at [http://localhost:3000](http://localhost:3000)
+  </Step>
 
-### Step 3: Go live
+  <Step title="Start building">
+    Open `app/index.ryx` in your editor and start building your application!
+  </Step>
+</Steps>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+## Project Structure
 
-## Next steps
+Your new RyunixJS project has the following structure:
 
-Now that you have your docs running, explore these key features:
+```
+my-ryunix-app/
+├── app/
+│   ├── index.ryx          # Main page
+│   ├── layout.ryx         # Root layout
+│   └── errors.ryx         # Error handling
+├── assets/
+│   └── logo.svg           # Static assets
+├── styles/
+│   └── global.css         # Global styles
+├── public/                # Public static files
+├── package.json
+└── ryunix.config.js       # RyunixJS configuration
+```
+
+## Your First Component
+
+The default `app/index.ryx` file contains a simple counter example:
+
+```jsx app/index.ryx
+import { useStore } from '@unsetsoft/ryunixjs'
+import logo from '../assets/logo.svg'
+
+export default function Index() {
+  const [count, setCount] = useStore(0)
+
+  return (
+    <main className="main">
+      <img src={logo} alt="Ryunix Logo" className="logo" />
+      <h1>Welcome to Ryunix</h1>
+      <p className="subtitle">
+        A fast, modern, and flexible JavaScript framework for building user interfaces.
+      </p>
+
+      <div className="counter">
+        <button onClick={() => setCount(count - 1)}>-</button>
+        <span>Count: {count}</span>
+        <button onClick={() => setCount(count + 1)}>+</button>
+      </div>
+    </main>
+  )
+}
+```
+
+## Add Interactivity
+
+Let's enhance the component with more interactivity:
+
+```jsx app/index.ryx
+import { useStore, useEffect } from '@unsetsoft/ryunixjs'
+
+export default function Index() {
+  const [count, setCount] = useStore(0)
+  const [message, setMessage] = useStore('')
+
+  useEffect(() => {
+    if (count > 10) {
+      setMessage('Great job counting!')
+    } else if (count < 0) {
+      setMessage('Going negative!')
+    } else {
+      setMessage('')
+    }
+  }, [count])
+
+  return (
+    <main>
+      <h1>Interactive Counter</h1>
+      
+      <div className="counter">
+        <button onClick={() => setCount(count - 1)}>Decrement</button>
+        <span>Count: {count}</span>
+        <button onClick={() => setCount(count + 1)}>Increment</button>
+      </div>
+      
+      {message && <p className="message">{message}</p>}
+      
+      <button onClick={() => setCount(0)}>Reset</button>
+    </main>
+  )
+}
+```
+
+## Available Scripts
+
+Your RyunixJS project comes with these npm scripts:
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server with hot reload |
+| `npm run build` | Build for production |
+| `npm start` | Start production server |
+| `npm run lint` | Run ESLint |
+
+## File-System Routing
+
+RyunixJS uses file-system based routing. Create new pages by adding files to the `app/` directory:
+
+```
+app/
+├── index.ryx              # → /
+├── about.ryx              # → /about
+├── blog/
+│   ├── index.ryx          # → /blog
+│   └── [slug].ryx         # → /blog/:slug
+└── api/
+    └── hello/
+        └── route.js       # → /api/hello
+```
+
+### Create an About Page
+
+```jsx app/about.ryx
+export const Metatags = {
+  title: 'About',
+  description: 'About our application'
+}
+
+export default function About() {
+  return (
+    <main>
+      <h1>About Us</h1>
+      <p>This is a RyunixJS application.</p>
+    </main>
+  )
+}
+```
+
+## Adding Layouts
+
+Create shared layouts for consistent page structure:
+
+```jsx app/layout.ryx
+import '../styles/global.css'
+
+export const Metatags = {
+  title: {
+    template: '%s | My App',
+    default: 'My App'
+  },
+  description: 'A modern RyunixJS application',
+  viewport: 'width=device-width, initial-scale=1.0'
+}
+
+export default function RootLayout({ children }) {
+  return (
+    <div className="app">
+      <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+      </nav>
+      
+      <main>{children}</main>
+      
+      <footer>
+        <p>&copy; 2024 My App</p>
+      </footer>
+    </div>
+  )
+}
+```
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core Concepts" icon="book" href="/core/components">
+    Learn about components, hooks, and rendering
+  </Card>
+  <Card title="Routing" icon="route" href="/webpack/routing">
+    Master file-system routing and navigation
+  </Card>
+  <Card title="State Management" icon="database" href="/core/state-management">
+    Understand state and data flow in RyunixJS
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/createElement">
+    Explore the complete API documentation
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Learn by Example
+
+Check out these guides to learn more:
+
+- [Components](/core/components) - Create reusable UI components
+- [Hooks](/core/hooks) - Use hooks for state and side effects
+- [Server-Side Rendering](/webpack/ssr-ssg) - Optimize for performance with SSR
+- [MDX Support](/advanced/mdx-support) - Write content with MDX
+
+## Get Help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/UnSetSoft/Ryunixjs/issues">
+    Report bugs and request features
+  </Card>
+  <Card title="Documentation" icon="book-open" href="/introduction">
+    Browse the full documentation
+  </Card>
+</CardGroup>

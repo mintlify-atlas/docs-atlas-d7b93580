@@ -1,0 +1,302 @@
+---
+title: Lazy Loading & Suspense
+description: Code-split your components with lazy() and Suspense for optimal performance
+---
+
+## Overview
+
+RyunixJS provides built-in code-splitting with `lazy()` and `Suspense` components. Load components on-demand to reduce initial bundle size and improve application performance.
+
+## Lazy Loading Components
+
+The `lazy()` function enables dynamic imports with automatic caching.
+
+### Basic Usage
+
+```jsx
+import { lazy, Suspense } from 'ryunix';
+
+const HeavyComponent = lazy(() => import('./HeavyComponent'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <HeavyComponent />
+    </Suspense>
+  );
+}
+```
+
+### API Signature
+
+```javascript
+const lazy = (importFn) => LazyComponent
+```
+
+**Parameters:**
+- `importFn` (Function) - Function returning a dynamic `import()` promise
+
+**Returns:**
+- A Ryunix component that loads on-demand
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/lazy.js:21`
+
+### How It Works
+
+Lazy components maintain three states:
+
+```javascript
+const SUSPENSE_STATUS = {
+  PENDING: 'pending',    // Initial loading
+  RESOLVED: 'resolved',  // Successfully loaded
+  REJECTED: 'rejected',  // Load failed
+}
+```
+
+- **First render**: Component starts loading, returns `null`
+- **Loading**: Suspense boundary shows fallback UI
+- **Resolved**: Component renders normally (cached for future renders)
+- **Rejected**: Error thrown to nearest error boundary
+
+## Suspense Component
+
+Wrap lazy components in `Suspense` to provide loading states.
+
+### Basic Example
+
+```jsx
+import { Suspense, lazy } from 'ryunix';
+
+const ProfilePage = lazy(() => import('./ProfilePage'));
+const SettingsPage = lazy(() => import('./SettingsPage'));
+
+function Dashboard() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ProfilePage />
+      <SettingsPage />
+    </Suspense>
+  );
+}
+```
+
+### API Signature
+
+```javascript
+const Suspense = ({ fallback, children }) => Element
+```
+
+**Props:**
+- `fallback` (Element) - UI to display while children are loading
+- `children` (Element|Array) - Lazy component(s) or any content
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/lazy.js:85`
+
+## Advanced Patterns
+
+### Nested Suspense Boundaries
+
+Create granular loading states by nesting Suspense components:
+
+```jsx
+function App() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <Navigation />
+      
+      <Suspense fallback={<SidebarSkeleton />}>
+        <Sidebar />
+      </Suspense>
+      
+      <Suspense fallback={<ContentSkeleton />}>
+        <MainContent />
+      </Suspense>
+    </Suspense>
+  );
+}
+```
+
+### Preloading Components
+
+Start loading components before they're rendered using `preload()`:
+
+```jsx
+import { preload } from 'ryunix';
+
+const Dashboard = lazy(() => import('./Dashboard'));
+
+// Preload on user interaction
+function HomePage() {
+  const handleMouseEnter = () => {
+    preload(() => import('./Dashboard'));
+  };
+  
+  return (
+    <Link 
+      to="/dashboard" 
+      onMouseEnter={handleMouseEnter}
+    >
+      Go to Dashboard
+    </Link>
+  );
+}
+```
+
+**API:**
+
+```javascript
+const preload = (importFn) => Promise
+```
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/lazy.js:125`
+
+### Error Handling
+
+Combine Suspense with ErrorBoundary for robust loading:
+
+```jsx
+import { Suspense, lazy, ErrorBoundary } from 'ryunix';
+
+const AsyncComponent = lazy(() => import('./AsyncComponent'));
+
+function App() {
+  return (
+    <ErrorBoundary 
+      fallback={(error) => (
+        <div>Failed to load: {error.message}</div>
+      )}
+    >
+      <Suspense fallback={<Loading />}>
+        <AsyncComponent />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+```
+
+<Warning>
+  If lazy component loading fails (network error, file not found), an error is thrown to the nearest ErrorBoundary. Always wrap Suspense in ErrorBoundary for production apps.
+</Warning>
+
+## Route-Based Code Splitting
+
+Split bundles by route for optimal loading:
+
+```jsx
+import { lazy, Suspense } from 'ryunix';
+
+const Home = lazy(() => import('./pages/Home'));
+const About = lazy(() => import('./pages/About'));
+const Contact = lazy(() => import('./pages/Contact'));
+
+function Router({ route }) {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      {route === '/' && <Home />}
+      {route === '/about' && <About />}
+      {route === '/contact' && <Contact />}
+    </Suspense>
+  );
+}
+```
+
+## Server-Side Rendering
+
+During SSR, Suspense boundaries render children directly for capture:
+
+```javascript
+// Internal behavior (lazy.js:109)
+if (anyPending && !getState().isSuspenseBackground) {
+  return fallback || null;
+}
+```
+
+This ensures lazy components are included in server HTML while client receives split bundles.
+
+## Performance Tips
+
+### 1. Strategic Boundaries
+
+Place Suspense at meaningful UI boundaries:
+
+```jsx
+// Good: Suspense at page level
+<Suspense fallback={<PageSkeleton />}>
+  <UserProfile />
+</Suspense>
+
+// Avoid: Too granular
+<Suspense fallback={<Spinner />}>
+  <Button />
+</Suspense>
+```
+
+### 2. Cache-Friendly Imports
+
+Lazy components are cached after first load:
+
+```jsx
+// First render: loads from network
+// Subsequent renders: instant (from cache)
+const Chart = lazy(() => import('./Chart'));
+```
+
+### 3. Meaningful Fallbacks
+
+Use skeletons instead of spinners for better UX:
+
+```jsx
+<Suspense 
+  fallback={
+    <div className="skeleton">
+      <div className="skeleton-header" />
+      <div className="skeleton-content" />
+    </div>
+  }
+>
+  <Article />
+</Suspense>
+```
+
+## Common Pitfalls
+
+<Warning>
+  **Don't inline import functions:**
+  
+  ```jsx
+  // Bad: Creates new function each render
+  <Suspense fallback={<Spinner />}>
+    {lazy(() => import('./Component'))}
+  </Suspense>
+  
+  // Good: Define outside component
+  const Component = lazy(() => import('./Component'));
+  ```
+</Warning>
+
+<Warning>
+  **Always provide fallback:**
+  
+  ```jsx
+  // Bad: No fallback
+  <Suspense>
+    <AsyncComponent />
+  </Suspense>
+  
+  // Good: Clear loading state
+  <Suspense fallback={<Loading />}>
+    <AsyncComponent />
+  </Suspense>
+  ```
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Profiler & DevTools" icon="chart-line" href="/advanced/profiler-devtools">
+    Monitor lazy component performance
+  </Card>
+  <Card title="Error Boundaries" icon="shield-halved" href="/core/error-boundaries">
+    Handle lazy loading failures
+  </Card>
+</CardGroup>

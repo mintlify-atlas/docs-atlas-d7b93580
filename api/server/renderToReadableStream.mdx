@@ -1,0 +1,307 @@
+---
+title: "renderToReadableStream"
+description: "Asynchronously render a RyunixJS element tree to a Web ReadableStream for streaming server-side rendering"
+icon: "water"
+---
+
+## Overview
+
+`renderToReadableStream()` renders a RyunixJS element tree to a Web `ReadableStream`, enabling streaming server-side rendering with progressive HTML delivery.
+
+<Note>
+  This is the recommended approach for SSR in production as it provides better time-to-first-byte (TTFB) and handles Suspense boundaries natively.
+</Note>
+
+## Signature
+
+```javascript
+renderToReadableStream(element: RyunixElement): ReadableStream
+```
+
+<ParamField path="element" type="RyunixElement" required>
+  The root RyunixJS element to render. Created with `createElement()` or JSX.
+</ParamField>
+
+## Return Value
+
+Returns a Web `ReadableStream` that emits HTML chunks as they are rendered.
+
+## Usage
+
+### Basic Streaming Response
+
+```javascript server.js
+import { renderToReadableStream, createElement } from '@unsetsoft/ryunixjs'
+import App from './App'
+
+export default async (req, res) => {
+  const stream = renderToReadableStream(createElement(App))
+  
+  res.setHeader('Content-Type', 'text/html')
+  
+  const reader = stream.getReader()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    res.write(value)
+  }
+  
+  res.end()
+}
+```
+
+### With Suspense Boundaries
+
+```javascript server.js
+import { renderToReadableStream, createElement, Suspense, lazy } from '@unsetsoft/ryunixjs'
+
+const HeavyComponent = lazy(() => import('./HeavyComponent'))
+
+function App() {
+  return (
+    <div>
+      <h1>My App</h1>
+      <Suspense fallback={<div>Loading...</div>}>
+        <HeavyComponent />
+      </Suspense>
+    </div>
+  )
+}
+
+const stream = renderToReadableStream(createElement(App))
+// Stream sends fallback HTML immediately
+// Then sends <template> with actual content when HeavyComponent loads
+```
+
+### Node.js HTTP Server
+
+```javascript server.js
+import http from 'http'
+import { renderToReadableStream } from '@unsetsoft/ryunixjs'
+import { Readable } from 'stream'
+import App from './App'
+
+const server = http.createServer(async (req, res) => {
+  const webStream = renderToReadableStream(createElement(App, { url: req.url }))
+  
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Transfer-Encoding': 'chunked'
+  })
+  
+  // Convert Web ReadableStream to Node.js stream
+  const nodeStream = Readable.fromWeb(webStream)
+  nodeStream.pipe(res)
+})
+
+server.listen(3000)
+```
+
+### Express.js Integration
+
+```javascript server.js
+import express from 'express'
+import { renderToReadableStream } from '@unsetsoft/ryunixjs'
+import { Readable } from 'stream'
+import App from './App'
+
+const app = express()
+
+app.get('*', async (req, res) => {
+  const stream = renderToReadableStream(
+    createElement(App, { url: req.url })
+  )
+  
+  res.setHeader('Content-Type', 'text/html')
+  Readable.fromWeb(stream).pipe(res)
+})
+
+app.listen(3000)
+```
+
+## Behavior
+
+### Progressive HTML Delivery
+
+The stream emits HTML in chunks as components are rendered:
+
+1. **Initial HTML** is sent immediately (shell)
+2. **Suspense fallbacks** render synchronously
+3. **Async components** stream when ready
+4. **Template injection** replaces fallbacks with actual content
+
+This provides faster perceived load times compared to `renderToString()`.
+
+### Suspense Integration
+
+When a `<Suspense>` boundary is encountered:
+
+1. The `fallback` content is rendered immediately
+2. The actual component starts loading in the background
+3. When ready, a `<template>` tag with replacement script is sent:
+
+```html
+<div id="suspense-1">Loading...</div>
+
+<!-- Sent later when component loads -->
+<template id="suspense-1-template">
+  <div>Actual Content</div>
+</template>
+<script>
+  $RC('suspense-1', 'suspense-1-template')
+</script>
+```
+
+The `$RC` (Replace Content) helper swaps the fallback with actual content.
+
+### Error Handling
+
+Errors during streaming are handled differently than synchronous rendering:
+
+```javascript
+try {
+  const stream = renderToReadableStream(createElement(App))
+  const reader = stream.getReader()
+  
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    // Handle chunk
+  }
+} catch (error) {
+  // Error during stream initialization or reading
+  console.error('Stream error:', error)
+}
+```
+
+<Warning>
+  If an error occurs after streaming has started, you cannot send an error page since headers have already been sent. Use ErrorBoundary components to handle errors gracefully.
+</Warning>
+
+### Cancellation
+
+Streams can be cancelled if the client disconnects:
+
+```javascript
+const stream = renderToReadableStream(createElement(App))
+const reader = stream.getReader()
+
+req.on('close', () => {
+  reader.cancel('Client disconnected')
+})
+```
+
+## Common Patterns
+
+### Shell with Progressive Enhancement
+
+```javascript
+import { renderToReadableStream, Suspense } from '@unsetsoft/ryunixjs'
+
+function App() {
+  return (
+    <html>
+      <head>
+        <title>My App</title>
+        <link rel="stylesheet" href="/styles.css" />
+      </head>
+      <body>
+        <nav>Navigation</nav>
+        
+        <Suspense fallback={<Skeleton />}>
+          <MainContent />
+        </Suspense>
+        
+        <footer>Footer</footer>
+        <script src="/app.js"></script>
+      </body>
+    </html>
+  )
+}
+
+const stream = renderToReadableStream(createElement(App))
+// Shell (nav, footer, skeleton) sent immediately
+// MainContent streamed when ready
+```
+
+### Multiple Suspense Boundaries
+
+```javascript
+function App() {
+  return (
+    <div>
+      <Suspense fallback={<div>Loading user...</div>}>
+        <UserProfile />
+      </Suspense>
+      
+      <Suspense fallback={<div>Loading posts...</div>}>
+        <PostsList />
+      </Suspense>
+      
+      <Suspense fallback={<div>Loading sidebar...</div>}>
+        <Sidebar />
+      </Suspense>
+    </div>
+  )
+}
+
+const stream = renderToReadableStream(createElement(App))
+// All three fallbacks sent immediately
+// Each component streams independently when ready
+```
+
+### SEO and Metadata
+
+```javascript
+import { renderToReadableStream, useMetadata } from '@unsetsoft/ryunixjs'
+
+function App() {
+  useMetadata([
+    { tag: 'title', children: 'My Page' },
+    { tag: 'meta', name: 'description', content: 'Page description' },
+    { tag: 'link', rel: 'canonical', href: 'https://example.com/page' }
+  ])
+  
+  return <div>Content</div>
+}
+
+const stream = renderToReadableStream(createElement(App))
+// Metadata tags are buffered and injected into <head>
+```
+
+## Performance Benefits
+
+<CardGroup cols={2}>
+  <Card title="Faster TTFB" icon="gauge-high">
+    First bytes sent immediately without waiting for full page render
+  </Card>
+  <Card title="Progressive Loading" icon="spinner">
+    Users see content as it becomes available
+  </Card>
+  <Card title="Better Perceived Performance" icon="eye">
+    Shell and critical content load first
+  </Card>
+  <Card title="Reduced Memory" icon="memory">
+    Chunks are sent and freed immediately
+  </Card>
+</CardGroup>
+
+## Browser Compatibility
+
+Web `ReadableStream` is supported in all modern browsers and Node.js 18+.
+
+For older Node.js versions, convert to Node.js streams:
+
+```javascript
+import { Readable } from 'stream'
+
+const webStream = renderToReadableStream(element)
+const nodeStream = Readable.fromWeb(webStream)
+```
+
+## See Also
+
+- [`renderToString()`](/api/server/renderToString) - Synchronous SSR alternative
+- [`Suspense`](/api/components/Suspense) - Handle async components
+- [`hydrate()`](/api/hydrate) - Client-side hydration
+- [`lazy()`](/api/utilities/lazy) - Code splitting for async components

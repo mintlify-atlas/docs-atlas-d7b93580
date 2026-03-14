@@ -1,0 +1,481 @@
+---
+title: Portals
+description: Render components outside the parent DOM hierarchy with createPortal
+---
+
+## Overview
+
+Portals provide a way to render children into a DOM node that exists outside the parent component's hierarchy. Essential for modals, tooltips, dropdowns, and overlays.
+
+## Basic Usage
+
+```jsx
+import { createPortal } from 'ryunix';
+
+function Modal({ children, isOpen }) {
+  if (!isOpen) return null;
+  
+  return createPortal(
+    <div className="modal-overlay">
+      <div className="modal-content">
+        {children}
+      </div>
+    </div>,
+    document.getElementById('modal-root')
+  );
+}
+```
+
+## API Signature
+
+```javascript
+const createPortal = (children, container) => PortalElement
+```
+
+**Parameters:**
+- `children` (Element|Array) - Element(s) to render
+- `container` (HTMLElement) - DOM node to render into
+
+**Returns:**
+- Portal element that renders outside parent hierarchy
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/portal.js:22`
+
+### How It Works
+
+Portals are marked with a special type and maintain reference to target container:
+
+```javascript
+// Internal structure (portal.js:30-37)
+return {
+  type: RYUNIX_PORTAL,
+  props: {
+    children: Array.isArray(children) ? children : [children],
+  },
+  containerInfo: container,
+  _isPortal: true,
+}
+```
+
+## Common Use Cases
+
+### Modal Dialog
+
+Render modals at document root to avoid z-index issues:
+
+```jsx
+import { createPortal, useStore, useEffect } from 'ryunix';
+
+function Modal({ isOpen, onClose, children }) {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+  
+  if (!isOpen) return null;
+  
+  return createPortal(
+    <div className="modal-backdrop" onClick={onClose}>
+      <div 
+        className="modal" 
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Usage
+function App() {
+  const [isOpen, setIsOpen] = useStore(false);
+  
+  return (
+    <div>
+      <button onClick={() => setIsOpen(true)}>
+        Open Modal
+      </button>
+      
+      <Modal 
+        isOpen={isOpen} 
+        onClose={() => setIsOpen(false)}
+      >
+        <h2>Modal Content</h2>
+        <p>This renders outside the parent DOM tree</p>
+      </Modal>
+    </div>
+  );
+}
+```
+
+### Tooltip Component
+
+Position tooltips at document root for proper layering:
+
+```jsx
+import { createPortal, useStore, useRef } from 'ryunix';
+
+function Tooltip({ children, content }) {
+  const [isVisible, setIsVisible] = useStore(false);
+  const [position, setPosition] = useStore({ x: 0, y: 0 });
+  const targetRef = useRef();
+  
+  const handleMouseEnter = (e) => {
+    const rect = e.target.getBoundingClientRect();
+    setPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8
+    });
+    setIsVisible(true);
+  };
+  
+  return (
+    <>
+      <span 
+        ref={targetRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setIsVisible(false)}
+      >
+        {children}
+      </span>
+      
+      {isVisible && createPortal(
+        <div 
+          className="tooltip"
+          style={{
+            position: 'absolute',
+            left: `${position.x}px`,
+            top: `${position.y}px`,
+            transform: 'translate(-50%, -100%)'
+          }}
+        >
+          {content}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+```
+
+### Dropdown Menu
+
+Render dropdowns outside parent containers to prevent overflow clipping:
+
+```jsx
+function Dropdown({ trigger, items }) {
+  const [isOpen, setIsOpen] = useStore(false);
+  const [position, setPosition] = useStore({ x: 0, y: 0 });
+  const buttonRef = useRef();
+  
+  const handleToggle = () => {
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setPosition({
+        x: rect.left,
+        y: rect.bottom + 4
+      });
+    }
+    setIsOpen(!isOpen);
+  };
+  
+  return (
+    <>
+      <button ref={buttonRef} onClick={handleToggle}>
+        {trigger}
+      </button>
+      
+      {isOpen && createPortal(
+        <div 
+          className="dropdown-menu"
+          style={{
+            position: 'absolute',
+            left: `${position.x}px`,
+            top: `${position.y}px`
+          }}
+        >
+          {items.map((item, i) => (
+            <div 
+              key={i} 
+              className="dropdown-item"
+              onClick={() => {
+                item.onClick();
+                setIsOpen(false);
+              }}
+            >
+              {item.label}
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+```
+
+## Advanced Patterns
+
+### Portal with Context
+
+Event handlers and context work normally through portals:
+
+```jsx
+import { createContext, createPortal } from 'ryunix';
+
+const { Provider: ThemeProvider, useContext: useTheme } = 
+  createContext('theme', 'light');
+
+function ThemedModal({ children }) {
+  const theme = useTheme();
+  
+  return createPortal(
+    <div className={`modal modal-${theme}`}>
+      {children}
+    </div>,
+    document.getElementById('modal-root')
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider value="dark">
+      <ThemedModal>
+        {/* Has access to dark theme */}
+        <p>Themed content</p>
+      </ThemedModal>
+    </ThemeProvider>
+  );
+}
+```
+
+### Multiple Portal Containers
+
+Use different containers for different portal types:
+
+```jsx
+function App() {
+  return (
+    <div id="app">
+      <div id="modal-root"></div>
+      <div id="tooltip-root"></div>
+      <div id="notification-root"></div>
+      
+      <Content />
+    </div>
+  );
+}
+
+function NotificationSystem({ notifications }) {
+  return createPortal(
+    <div className="notification-container">
+      {notifications.map(n => (
+        <Notification key={n.id} {...n} />
+      ))}
+    </div>,
+    document.getElementById('notification-root')
+  );
+}
+```
+
+### Portal Manager Hook
+
+Create a reusable portal management hook:
+
+```jsx
+import { useStore, useEffect } from 'ryunix';
+
+function usePortal(id = 'portal-root') {
+  const [container] = useStore(() => {
+    const existing = document.getElementById(id);
+    if (existing) return existing;
+    
+    const el = document.createElement('div');
+    el.id = id;
+    document.body.appendChild(el);
+    return el;
+  });
+  
+  useEffect(() => {
+    return () => {
+      // Cleanup if needed
+    };
+  }, []);
+  
+  return container;
+}
+
+// Usage
+function Modal({ children }) {
+  const container = usePortal('modal-root');
+  
+  return createPortal(
+    <div className="modal">{children}</div>,
+    container
+  );
+}
+```
+
+## Server-Side Rendering
+
+Portals work with SSR but the container must exist on the server:
+
+```jsx
+// Server template
+<html>
+  <body>
+    <div id="root"></div>
+    <div id="modal-root"></div>
+    <div id="tooltip-root"></div>
+  </body>
+</html>
+```
+
+<Warning>
+  Container elements must exist before portal creation. Always check for existence or create containers during app initialization.
+</Warning>
+
+## Error Handling
+
+Handle missing containers gracefully:
+
+```jsx
+function SafePortal({ children, containerId }) {
+  const container = document.getElementById(containerId);
+  
+  if (!container) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(
+        `Portal container "${containerId}" not found. ` +
+        `Rendering in place.`
+      );
+    }
+    return children;
+  }
+  
+  return createPortal(children, container);
+}
+```
+
+**Note:** RyunixJS validates containers automatically (source: `/home/daytona/workspace/source/packages/core/src/lib/portal.js:23-28`):
+
+```javascript
+if (!container) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.error('createPortal: target container is not a DOM element.');
+  }
+  return null;
+}
+```
+
+## Best Practices
+
+### 1. Create Containers Early
+
+Initialize portal containers in your HTML or during app setup:
+
+```html
+<!-- index.html -->
+<body>
+  <div id="root"></div>
+  <div id="modal-root"></div>
+</body>
+```
+
+### 2. Cleanup on Unmount
+
+Use useEffect for cleanup when portals unmount:
+
+```jsx
+function Modal({ isOpen, children }) {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isOpen]);
+  
+  // ...
+}
+```
+
+### 3. Event Bubbling
+
+Events bubble through Ryunix component tree, not DOM tree:
+
+```jsx
+function Parent() {
+  const handleClick = () => {
+    console.log('Clicked in portal'); // This fires!
+  };
+  
+  return (
+    <div onClick={handleClick}>
+      <PortalChild />
+    </div>
+  );
+}
+
+function PortalChild() {
+  return createPortal(
+    <button>Click me</button>,
+    document.body
+  );
+}
+```
+
+### 4. Accessibility
+
+Manage focus and ARIA attributes for portaled content:
+
+```jsx
+function AccessibleModal({ isOpen, onClose, children }) {
+  const modalRef = useRef();
+  
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      modalRef.current.focus();
+    }
+  }, [isOpen]);
+  
+  if (!isOpen) return null;
+  
+  return createPortal(
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      tabIndex={-1}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+```
+
+## Performance Considerations
+
+Portals have minimal overhead:
+
+- Render directly to target container
+- No extra wrapper elements
+- Same reconciliation performance as regular components
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Lazy Loading" icon="download" href="/advanced/lazy-suspense">
+    Code-split heavy modal components
+  </Card>
+  <Card title="Hooks Reference" icon="hook" href="/api/hooks/useStore">
+    Learn about useRef and useEffect
+  </Card>
+</CardGroup>

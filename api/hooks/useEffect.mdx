@@ -1,0 +1,263 @@
+---
+title: 'useEffect'
+description: 'Handle side effects in functional components'
+icon: 'bolt'
+---
+
+## Overview
+
+`useEffect` lets you perform side effects in functional components. It runs after the component renders and can optionally clean up before the component unmounts or before the effect runs again.
+
+## Signature
+
+```javascript
+useEffect(callback, deps)
+```
+
+## Parameters
+
+<ParamField path="callback" type="Function" required>
+  A function that contains the side effect logic. Can optionally return a cleanup function.
+  
+  The cleanup function (if returned) will be called:
+  - Before the effect runs again (if dependencies changed)
+  - When the component unmounts
+</ParamField>
+
+<ParamField path="deps" type="Array">
+  Optional array of dependencies. The effect only re-runs if one of the dependencies has changed.
+  
+  - If omitted: Effect runs after every render
+  - If `[]`: Effect runs only once after initial render
+  - If `[a, b]`: Effect runs when `a` or `b` changes
+</ParamField>
+
+## Return Value
+
+Returns `undefined`. This hook doesn't return a value.
+
+## Usage
+
+### Basic Side Effect
+
+```javascript
+import { useEffect, useStore } from 'ryunix'
+
+function DocumentTitle() {
+  const [count, setCount] = useStore(0)
+
+  useEffect(() => {
+    document.title = `Count: ${count}`
+  }, [count])
+
+  return (
+    <button onClick={() => setCount(count + 1)}>
+      Clicked {count} times
+    </button>
+  )
+}
+```
+
+### Subscriptions and Cleanup
+
+```javascript
+function WindowSize() {
+  const [size, setSize] = useStore({
+    width: window.innerWidth,
+    height: window.innerHeight
+  })
+
+  useEffect(() => {
+    const handleResize = () => {
+      setSize({
+        width: window.innerWidth,
+        height: window.innerHeight
+      })
+    }
+
+    window.addEventListener('resize', handleResize)
+
+    // Cleanup function removes the event listener
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  }, []) // Empty array means this runs once on mount
+
+  return <div>{size.width} x {size.height}</div>
+}
+```
+
+### Data Fetching
+
+```javascript
+function UserProfile({ userId }) {
+  const [user, setUser] = useStore(null)
+  const [loading, setLoading] = useStore(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    setLoading(true)
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!cancelled) {
+          setUser(data)
+          setLoading(false)
+        }
+      })
+
+    // Cleanup to prevent state updates if component unmounts
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  if (loading) return <div>Loading...</div>
+  return <div>{user?.name}</div>
+}
+```
+
+### Run on Every Render
+
+```javascript
+function Logger({ message }) {
+  // No deps array - runs after every render
+  useEffect(() => {
+    console.log('Component rendered:', message)
+  })
+
+  return <div>{message}</div>
+}
+```
+
+### Run Once on Mount
+
+```javascript
+function Analytics() {
+  useEffect(() => {
+    // Track page view
+    analytics.trackPageView(window.location.pathname)
+
+    // No cleanup needed
+  }, []) // Empty deps array - runs only once
+
+  return <div>Page content</div>
+}
+```
+
+### Multiple Effects
+
+```javascript
+function Component() {
+  const [count, setCount] = useStore(0)
+  const [theme, setTheme] = useStore('light')
+
+  // Separate effects for separate concerns
+  useEffect(() => {
+    document.title = `Count: ${count}`
+  }, [count])
+
+  useEffect(() => {
+    document.body.className = theme
+  }, [theme])
+
+  return <div>Content</div>
+}
+```
+
+## Dependency Comparison
+
+RyunixJS uses `Object.is()` to compare dependencies:
+
+```javascript
+const haveDepsChanged = (oldDeps, newDeps) => {
+  if (!oldDeps || !newDeps) return true
+  if (oldDeps.length !== newDeps.length) return true
+  return oldDeps.some((dep, i) => !Object.is(dep, newDeps[i]))
+}
+```
+
+This means:
+- Primitives are compared by value
+- Objects/arrays are compared by reference
+- `NaN === NaN` (unlike `===`)
+
+## Error Handling
+
+The hook validates its arguments in development:
+
+```javascript
+// ❌ Invalid - callback must be a function
+useEffect('not a function', [])
+
+// ❌ Invalid - deps must be an array or undefined
+useEffect(() => {}, 'not an array')
+
+// ✅ Valid
+useEffect(() => {}, [])
+useEffect(() => {})
+```
+
+## Server-Side Rendering
+
+During SSR, `useEffect` does nothing:
+
+```javascript
+if (state.isServerRendering) {
+  return // Effects don't run on the server
+}
+```
+
+Effects only run in the browser after hydration.
+
+## Common Patterns
+
+### Interval/Timer
+
+```javascript
+function Timer() {
+  const [seconds, setSeconds] = useStore(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSeconds(s => s + 1)
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  return <div>Seconds: {seconds}</div>
+}
+```
+
+### Local Storage Sync
+
+```javascript
+function PersistentCounter() {
+  const [count, setCount] = useStore(() => {
+    const saved = localStorage.getItem('count')
+    return saved ? JSON.parse(saved) : 0
+  })
+
+  useEffect(() => {
+    localStorage.setItem('count', JSON.stringify(count))
+  }, [count])
+
+  return <button onClick={() => setCount(count + 1)}>{count}</button>
+}
+```
+
+## Best Practices
+
+1. **Specify dependencies** - Always include all values from component scope used in the effect
+2. **Clean up subscriptions** - Return cleanup function for event listeners, timers, etc.
+3. **Avoid dependency omission** - Don't omit dependencies to "optimize" - it leads to bugs
+4. **Separate concerns** - Use multiple effects for unrelated side effects
+5. **Handle async properly** - Use cleanup to prevent state updates after unmount
+
+## Related Hooks
+
+- [useLayoutEffect](/api/hooks/useEffect) - Synchronous version for DOM measurements
+- [useMemo](/api/hooks/useMemo) - Memoize computed values
+- [useCallback](/api/hooks/useCallback) - Memoize functions

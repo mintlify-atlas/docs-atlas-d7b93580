@@ -1,0 +1,396 @@
+---
+title: "batchUpdates"
+description: "Batch multiple state updates into a single re-render for better performance"
+icon: "layer-group"
+---
+
+## Overview
+
+`batchUpdates()` allows you to group multiple state updates together so they trigger only a single re-render, improving performance.
+
+## Signature
+
+```javascript
+batchUpdates(callback: Function): void
+```
+
+<ParamField path="callback" type="Function" required>
+  A function containing the state updates to batch. All updates inside this function will be queued and flushed together.
+</ParamField>
+
+## Return Value
+
+Returns `void`. The function executes the callback and flushes updates when done.
+
+## Usage
+
+### Basic Batching
+
+```javascript
+import { batchUpdates, useStore } from '@unsetsoft/ryunixjs'
+
+function App() {
+  const [count, setCount] = useStore(0)
+  const [name, setName] = useStore('')
+  const [email, setEmail] = useStore('')
+  
+  const handleSubmit = () => {
+    // Without batching: 3 re-renders
+    // setCount(count + 1)
+    // setName('John')
+    // setEmail('john@example.com')
+    
+    // With batching: 1 re-render
+    batchUpdates(() => {
+      setCount(count + 1)
+      setName('John')
+      setEmail('john@example.com')
+    })
+  }
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <p>Name: {name}</p>
+      <p>Email: {email}</p>
+      <button onClick={handleSubmit}>Submit</button>
+    </div>
+  )
+}
+```
+
+### Multiple Component Updates
+
+```javascript
+import { batchUpdates } from '@unsetsoft/ryunixjs'
+
+function updateMultipleComponents(data) {
+  batchUpdates(() => {
+    updateUser(data.user)
+    updatePosts(data.posts)
+    updateComments(data.comments)
+    updateLikes(data.likes)
+  })
+  // All components re-render together once
+}
+```
+
+### Event Handler Optimization
+
+```javascript
+import { batchUpdates, useStore } from '@unsetsoft/ryunixjs'
+
+function DataGrid({ data }) {
+  const [selectedRows, setSelectedRows] = useStore([])
+  const [sortColumn, setSortColumn] = useStore(null)
+  const [filterText, setFilterText] = useStore('')
+  
+  const handleBulkAction = (action) => {
+    batchUpdates(() => {
+      // Process action
+      setSelectedRows([])
+      setSortColumn('name')
+      setFilterText('')
+    })
+  }
+  
+  return (
+    <div>
+      {/* Grid implementation */}
+      <button onClick={() => handleBulkAction('delete')}>Delete Selected</button>
+    </div>
+  )
+}
+```
+
+## Implementation Details
+
+### Batching Mechanism
+
+The batching system uses a flag and queue:
+
+```javascript
+let isBatching = false
+let pendingUpdates = []
+
+const batchUpdates = (callback) => {
+  const wasBatching = isBatching
+  isBatching = true
+
+  try {
+    callback()
+  } finally {
+    isBatching = wasBatching
+
+    if (!isBatching && pendingUpdates.length > 0) {
+      flushUpdates()
+    }
+  }
+```
+
+Source: `batching.js:11-24`
+
+### Update Queue
+
+Updates are queued during batching:
+
+```javascript
+const queueUpdate = (update) => {
+  pendingUpdates.push(update)
+
+  if (!isBatching) {
+    flushUpdates()
+  }
+}
+```
+
+Source: `batching.js:32-38`
+
+### Flushing Updates
+
+Queued updates are executed together:
+
+```javascript
+const flushUpdates = () => {
+  if (pendingUpdates.length === 0) return
+
+  const updates = pendingUpdates
+  pendingUpdates = []
+
+  // Execute all updates
+  updates.forEach((update) => update())
+}
+```
+
+Source: `batching.js:45-53`
+
+## Common Patterns
+
+### Form Submission
+
+```javascript
+import { batchUpdates, useStore } from '@unsetsoft/ryunixjs'
+
+function ContactForm() {
+  const [formData, setFormData] = useStore({
+    name: '',
+    email: '',
+    message: ''
+  })
+  const [errors, setErrors] = useStore({})
+  const [isSubmitting, setIsSubmitting] = useStore(false)
+  
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    
+    batchUpdates(() => {
+      setErrors({})
+      setIsSubmitting(true)
+    })
+    
+    try {
+      await submitForm(formData)
+      
+      batchUpdates(() => {
+        setFormData({ name: '', email: '', message: '' })
+        setIsSubmitting(false)
+      })
+    } catch (error) {
+      batchUpdates(() => {
+        setErrors(error.errors)
+        setIsSubmitting(false)
+      })
+    }
+  }
+  
+  return <form onSubmit={handleSubmit}>{/* Form fields */}</form>
+}
+```
+
+### Data Fetching
+
+```javascript
+import { batchUpdates, useStore, useEffect } from '@unsetsoft/ryunixjs'
+
+function UserProfile({ userId }) {
+  const [user, setUser] = useStore(null)
+  const [posts, setPosts] = useStore([])
+  const [isLoading, setIsLoading] = useStore(true)
+  const [error, setError] = useStore(null)
+  
+  useEffect(() => {
+    const fetchData = async () => {
+      batchUpdates(() => {
+        setIsLoading(true)
+        setError(null)
+      })
+      
+      try {
+        const [userData, postsData] = await Promise.all([
+          fetchUser(userId),
+          fetchUserPosts(userId)
+        ])
+        
+        batchUpdates(() => {
+          setUser(userData)
+          setPosts(postsData)
+          setIsLoading(false)
+        })
+      } catch (err) {
+        batchUpdates(() => {
+          setError(err.message)
+          setIsLoading(false)
+        })
+      }
+    }
+    
+    fetchData()
+  }, [userId])
+  
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error}</div>
+  
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <PostList posts={posts} />
+    </div>
+  )
+}
+```
+
+### Nested Batching
+
+```javascript
+import { batchUpdates } from '@unsetsoft/ryunixjs'
+
+function complexUpdate() {
+  batchUpdates(() => {
+    updateA()
+    
+    // Nested batch updates are handled correctly
+    batchUpdates(() => {
+      updateB()
+      updateC()
+    })
+    
+    updateD()
+  })
+  // All updates (A, B, C, D) are flushed together
+}
+```
+
+The implementation tracks the batching state to handle nested calls:
+
+```javascript
+const wasBatching = isBatching  // Save previous state
+isBatching = true
+// ...
+isBatching = wasBatching  // Restore previous state
+```
+
+Source: `batching.js:12-18`
+
+## Performance Benefits
+
+<CardGroup cols={2}>
+  <Card title="Fewer Re-renders" icon="gauge-high">
+    Multiple state updates trigger only one render cycle
+  </Card>
+  <Card title="Better Performance" icon="rocket">
+    Reduces reconciliation overhead and DOM operations
+  </Card>
+  <Card title="Consistent State" icon="check">
+    All updates applied atomically before render
+  </Card>
+  <Card title="Simpler Code" icon="code">
+    No need to combine state into single object
+  </Card>
+</CardGroup>
+
+## When to Use
+
+### Use batchUpdates When:
+
+- Updating multiple state variables in event handlers
+- Handling bulk operations (select all, delete multiple)
+- Processing data fetching results
+- Updating form state from server response
+- Synchronizing multiple components
+
+### Automatic Batching
+
+<Note>
+  RyunixJS automatically batches updates in event handlers, similar to React 18. Explicit `batchUpdates()` is mainly useful for async contexts or manual optimization.
+</Note>
+
+```javascript
+// These are automatically batched in event handlers
+function handleClick() {
+  setCount(count + 1)
+  setName('John')
+  setEmail('john@example.com')
+  // Only triggers one re-render
+}
+
+// But NOT in async callbacks
+function handleAsync() {
+  fetch('/api/data').then(data => {
+    // Without batchUpdates: 3 re-renders
+    setCount(data.count)
+    setName(data.name)
+    setEmail(data.email)
+  })
+}
+
+// Use batchUpdates in async contexts
+function handleAsyncBatched() {
+  fetch('/api/data').then(data => {
+    batchUpdates(() => {
+      setCount(data.count)
+      setName(data.name)
+      setEmail(data.email)
+    })
+    // Only 1 re-render
+  })
+}
+```
+
+## Debugging
+
+### Measuring Re-renders
+
+```javascript
+import { batchUpdates } from '@unsetsoft/ryunixjs'
+
+function App() {
+  console.log('Rendering App')
+  
+  const handleUpdate = () => {
+    console.log('Before updates')
+    
+    batchUpdates(() => {
+      setState1('value1')
+      console.log('After setState1')  // Inside batch
+      setState2('value2')
+      console.log('After setState2')  // Inside batch
+    })
+    
+    console.log('After batchUpdates')  // Batch complete
+  }
+  
+  // Log will show:
+  // Before updates
+  // After setState1
+  // After setState2
+  // After batchUpdates
+  // Rendering App (only once)
+}
+```
+
+## See Also
+
+- [`useStore()`](/api/hooks/useStore) - State management hook
+- [`useReducer()`](/api/hooks/useReducer) - Complex state updates
+- [State Management Guide](/core/state-management) - Understanding state in RyunixJS
+- [Priority Updates](/api/hooks/useTransition) - Control update priority

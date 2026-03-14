@@ -1,0 +1,461 @@
+---
+title: Hooks
+description: Comprehensive guide to RyunixJS hooks for state, effects, and lifecycle management
+---
+
+RyunixJS provides a comprehensive hooks API that maintains familiarity while integrating unique features for priority scheduling and routing.
+
+## State Management
+
+### useStore
+
+The primary state hook for managing component state.
+
+```javascript
+import { useStore } from '@unsetsoft/ryunixjs'
+
+const Counter = () => {
+  const [count, setCount] = useStore(0)
+  
+  return createElement(
+    'button',
+    { onClick: () => setCount(count + 1) },
+    `Count: ${count}`
+  )
+}
+```
+
+**Signature:**
+```javascript
+const [state, setState] = useStore(initialState)
+```
+
+**Parameters:**
+- `initialState` - Initial state value or function that returns initial state
+
+**Returns:**
+- `state` - Current state value
+- `setState` - Function to update state (accepts value or updater function)
+
+<Note>
+  `useStore` uses `useReducer` internally and supports both direct values and updater functions.
+</Note>
+
+### useReducer
+
+Manages complex state logic with a reducer function.
+
+```javascript
+import { useReducer } from '@unsetsoft/ryunixjs'
+
+const reducer = (state, action) => {
+  switch (action.type) {
+    case 'increment':
+      return { count: state.count + 1 }
+    case 'decrement':
+      return { count: state.count - 1 }
+    default:
+      return state
+  }
+}
+
+const Counter = () => {
+  const [state, dispatch] = useReducer(reducer, { count: 0 })
+  
+  return createElement('div', null,
+    createElement('button', 
+      { onClick: () => dispatch({ type: 'decrement' }) }, '-'),
+    createElement('span', null, state.count),
+    createElement('button', 
+      { onClick: () => dispatch({ type: 'increment' }) }, '+')
+  )
+}
+```
+
+**Signature:**
+```javascript
+const [state, dispatch] = useReducer(reducer, initialState, init)
+```
+
+**How it works:**
+- Dispatcher queues actions in the fiber's hook queue
+- Updates the Work-In-Progress fiber
+- Schedules a render cycle via `scheduleWork`
+
+### usePersistentStore
+
+Synchronizes state with `localStorage` for persistence across sessions.
+
+```javascript
+import { usePersistentStore } from '@unsetsoft/ryunixjs'
+
+const Settings = () => {
+  const [theme, setTheme] = usePersistentStore('theme', 'light')
+  
+  return createElement('button',
+    { onClick: () => setTheme(theme === 'light' ? 'dark' : 'light') },
+    `Current theme: ${theme}`
+  )
+}
+```
+
+**Signature:**
+```javascript
+const [state, setValue] = usePersistentStore(key, initialState)
+```
+
+**Parameters:**
+- `key` - localStorage key
+- `initialState` - Default value if no stored data exists
+
+## Side Effects & Lifecycle
+
+### useEffect
+
+Runs side effects after render. Effects execute asynchronously after the browser paints.
+
+```javascript
+import { useEffect, useStore } from '@unsetsoft/ryunixjs'
+
+const DataFetcher = ({ userId }) => {
+  const [data, setData] = useStore(null)
+  
+  useEffect(() => {
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(setData)
+    
+    // Cleanup function
+    return () => {
+      // Cancel requests, clear timers, etc.
+    }
+  }, [userId]) // Re-run when userId changes
+  
+  return data ? createElement('div', null, data.name) : 'Loading...'
+}
+```
+
+**Signature:**
+```javascript
+useEffect(callback, deps)
+```
+
+**Parameters:**
+- `callback` - Function containing side effect logic (can return cleanup function)
+- `deps` - Array of dependencies (effect runs when deps change)
+
+<Warning>
+  Always include all values used inside the effect in the dependency array to avoid stale closures.
+</Warning>
+
+### useLayoutEffect
+
+Runs synchronously after DOM mutations but before browser paint.
+
+```javascript
+import { useLayoutEffect, useRef } from '@unsetsoft/ryunixjs'
+
+const MeasureBox = () => {
+  const ref = useRef(null)
+  
+  useLayoutEffect(() => {
+    const rect = ref.current.getBoundingClientRect()
+    console.log('Box dimensions:', rect.width, rect.height)
+  }, [])
+  
+  return createElement('div', { ref })
+}
+```
+
+**Use cases:**
+- DOM measurements
+- Synchronous DOM mutations to avoid flickering
+- Third-party library DOM manipulation
+
+<Note>
+  `useLayoutEffect` runs synchronously during the commit phase, before the browser paints. Use sparingly to avoid blocking rendering.
+</Note>
+
+## Performance & Memoization
+
+### useMemo
+
+Memoizes expensive computations.
+
+```javascript
+import { useMemo, useStore } from '@unsetsoft/ryunixjs'
+
+const ExpensiveComponent = ({ items }) => {
+  const [filter, setFilter] = useStore('')
+  
+  const filteredItems = useMemo(() => {
+    console.log('Filtering items...')
+    return items.filter(item => 
+      item.name.toLowerCase().includes(filter.toLowerCase())
+    )
+  }, [items, filter])
+  
+  return createElement('div', null, filteredItems.map(...))
+}
+```
+
+**Signature:**
+```javascript
+const memoizedValue = useMemo(compute, deps)
+```
+
+### useCallback
+
+Memoizes function references to prevent unnecessary re-renders.
+
+```javascript
+import { useCallback, useStore } from '@unsetsoft/ryunixjs'
+
+const Parent = () => {
+  const [count, setCount] = useStore(0)
+  
+  const handleClick = useCallback(() => {
+    setCount(c => c + 1)
+  }, []) // Empty deps - callback never changes
+  
+  return createElement(ExpensiveChild, { onClick: handleClick })
+}
+```
+
+**Implementation:**
+```javascript
+// useCallback is implemented as:
+const useCallback = (callback, deps) => {
+  return useMemo(() => callback, deps)
+}
+```
+
+### useRef
+
+Provides a mutable object that persists across renders.
+
+```javascript
+import { useRef, useEffect } from '@unsetsoft/ryunixjs'
+
+const Timer = () => {
+  const intervalRef = useRef(null)
+  
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      console.log('Tick')
+    }, 1000)
+    
+    return () => clearInterval(intervalRef.current)
+  }, [])
+  
+  return createElement('div', null, 'Timer running')
+}
+```
+
+**Signature:**
+```javascript
+const ref = useRef(initialValue)
+// ref.current is mutable and doesn't trigger re-renders
+```
+
+## Concurrent Mode & Priority
+
+### useTransition
+
+Marks state updates as non-urgent to keep the UI responsive.
+
+```javascript
+import { useTransition, useStore } from '@unsetsoft/ryunixjs'
+
+const SearchResults = () => {
+  const [query, setQuery] = useStore('')
+  const [results, setResults] = useStore([])
+  const [isPending, startTransition] = useTransition()
+  
+  const handleSearch = (value) => {
+    setQuery(value) // Urgent update
+    
+    startTransition(() => {
+      // Non-urgent update - won't block UI
+      const filtered = expensiveSearch(value)
+      setResults(filtered)
+    })
+  }
+  
+  return createElement('div', null,
+    createElement('input', { 
+      value: query, 
+      onInput: (e) => handleSearch(e.target.value) 
+    }),
+    isPending ? 'Searching...' : results.map(...)
+  )
+}
+```
+
+**Signature:**
+```javascript
+const [isPending, startTransition] = useTransition()
+```
+
+**How it works:**
+- Sets `isPending` to `true` immediately (Priority: IMMEDIATE)
+- Executes callback with Priority: LOW
+- Keeps UI responsive during heavy renders
+
+### useDeferredValue
+
+Defers updates to a value by using low priority scheduling.
+
+```javascript
+import { useDeferredValue, useStore } from '@unsetsoft/ryunixjs'
+
+const FilteredList = ({ items }) => {
+  const [query, setQuery] = useStore('')
+  const deferredQuery = useDeferredValue(query)
+  
+  const filteredItems = items.filter(item =>
+    item.name.includes(deferredQuery)
+  )
+  
+  return createElement('div', null,
+    createElement('input', { 
+      value: query,
+      onInput: (e) => setQuery(e.target.value)
+    }),
+    filteredItems.map(...)
+  )
+}
+```
+
+**Implementation details:**
+- Uses 100ms debounce with `setTimeout`
+- Updates with Priority.LOW to prevent UI blocking
+
+## Context
+
+### createContext
+
+Creates a context Provider and hook for sharing data across components.
+
+```javascript
+import { createContext, useStore } from '@unsetsoft/ryunixjs'
+
+const { Provider: ThemeProvider, useContext: useTheme } = createContext(
+  'app.theme',
+  { theme: 'light' } // default value
+)
+
+const App = ({ children }) => {
+  const [theme, setTheme] = useStore('light')
+  
+  return createElement(
+    ThemeProvider,
+    { value: { theme, setTheme } },
+    children
+  )
+}
+
+const Button = () => {
+  const { theme } = useTheme()
+  return createElement('button', 
+    { className: theme },
+    'Click me'
+  )
+}
+```
+
+**Signature:**
+```javascript
+const { Provider, useContext } = createContext(contextId, defaultValue)
+```
+
+**How it works:**
+- Internal traversal walks up the fiber tree
+- Finds nearest matching Provider by `_contextId`
+- Returns the provider's value or default
+
+## Utility Hooks
+
+### useId
+
+Generates a deterministic, unique ID stable across SSR and hydration.
+
+```javascript
+import { useId } from '@unsetsoft/ryunixjs'
+
+const Form = () => {
+  const id = useId()
+  
+  return createElement('div', null,
+    createElement('label', { htmlFor: id }, 'Name:'),
+    createElement('input', { id })
+  )
+}
+```
+
+### useDebounce
+
+Returns a debounced version of a value.
+
+```javascript
+import { useDebounce, useStore } from '@unsetsoft/ryunixjs'
+
+const SearchInput = () => {
+  const [value, setValue] = useStore('')
+  const debouncedValue = useDebounce(value, 300)
+  
+  useEffect(() => {
+    // API call only happens 300ms after user stops typing
+    searchAPI(debouncedValue)
+  }, [debouncedValue])
+  
+  return createElement('input', {
+    value,
+    onInput: (e) => setValue(e.target.value)
+  })
+}
+```
+
+### useThrottle
+
+Returns a throttled version of a value that updates at most once per interval.
+
+```javascript
+import { useThrottle, useStore } from '@unsetsoft/ryunixjs'
+
+const ScrollTracker = () => {
+  const [scrollY, setScrollY] = useStore(0)
+  const throttledScrollY = useThrottle(scrollY, 300)
+  
+  useEffect(() => {
+    const handleScroll = () => setScrollY(window.scrollY)
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+  
+  return createElement('div', null, `Scroll: ${throttledScrollY}px`)
+}
+```
+
+### useSwitch
+
+Convenience hook for boolean toggle state.
+
+```javascript
+import { useSwitch } from '@unsetsoft/ryunixjs'
+
+const Modal = () => {
+  const [isOpen, toggle] = useSwitch(false)
+  
+  return createElement('div', null,
+    createElement('button', { onClick: toggle }, 'Toggle Modal'),
+    isOpen && createElement(ModalContent)
+  )
+}
+```
+
+## Related
+
+- [Components](/core/components) - Component architecture
+- [State Management](/core/state-management) - Advanced state patterns
+- [Routing Hooks](/webpack/routing) - Navigation and routing hooks

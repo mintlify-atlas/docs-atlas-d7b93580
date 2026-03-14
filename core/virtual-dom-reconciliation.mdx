@@ -1,0 +1,539 @@
+---
+title: Virtual DOM & Reconciliation
+description: Deep dive into RyunixJS fiber-based reconciliation and concurrent rendering architecture
+---
+
+RyunixJS employs a **Fiber-based, concurrent rendering architecture** that splits rendering work into interruptible units. This prevents blocking the main thread during deep tree updates.
+
+## Fiber Architecture
+
+Fibers are the fundamental unit of work in RyunixJS. Each element in the virtual DOM tree has a corresponding fiber.
+
+### Fiber Structure
+
+```javascript
+const fiber = {
+  type: 'div',              // Component type or tag name
+  props: { /* ... */ },     // Element props
+  dom: domNode,             // Actual DOM node reference
+  parent: parentFiber,      // Parent fiber
+  child: firstChildFiber,   // First child
+  sibling: nextSiblingFiber,// Next sibling
+  alternate: oldFiber,      // Previous version (for diffing)
+  effectTag: 'PLACEMENT',   // What to do in commit phase
+  hooks: [],                // Hook state storage
+  key: 'unique-key',        // List reconciliation key
+  index: 0,                 // Position in children array
+}
+```
+
+### Fiber Relationships
+
+Fibers form a linked tree structure:
+
+```
+        App
+         |
+      Header -----> Main -----> Footer
+       / \           |
+     Nav  Logo     Article
+                    / | \
+                  H1  P  Img
+```
+
+Each fiber has:
+- **One parent** (upward link)
+- **One child** (first child)
+- **One sibling** (next sibling)
+
+<Note>
+  This structure allows traversal without recursion, making rendering interruptible and resumable.
+</Note>
+
+## Reconciliation
+
+The reconciler compares the current virtual tree with new elements to determine what needs to be created, updated, or deleted.
+
+### reconcileChildren()
+
+Core reconciliation logic with O(1) key-based optimization.
+
+```javascript
+import { reconcileChildren } from '@unsetsoft/ryunixjs/reconciler'
+
+// Called during component render
+reconcileChildren(wipFiber, newElements)
+```
+
+**How it works:**
+
+1. **Build Old Fiber Map**: Creates O(1) lookup map of existing fibers by key/index
+
+```javascript
+const oldFiberMap = new Map()
+let oldFiber = wipFiber.alternate?.child
+let position = 0
+
+while (oldFiber) {
+  const key = oldFiber.key ?? `__index_${position}__`
+  oldFiberMap.set(key, oldFiber)
+  oldFiber = oldFiber.sibling
+  position++
+}
+```
+
+2. **Match New Elements**: For each new element, find matching old fiber
+
+```javascript
+const key = element.key ?? `__index_${index}__`
+const matchedFiber = oldFiberMap.get(key)
+const sameType = matchedFiber && element.type === matchedFiber.type
+```
+
+3. **Assign Effect Tags**:
+
+- **PLACEMENT**: New element (create and insert)
+- **UPDATE**: Element exists but props changed
+- **DELETION**: Old element no longer exists
+- **HYDRATE**: Existing SSR node (attach events only)
+
+```javascript
+if (sameType) {
+  // Reuse fiber, mark as UPDATE
+  newFiber = {
+    type: matchedFiber.type,
+    props: element.props,
+    dom: matchedFiber.dom,
+    alternate: matchedFiber,
+    effectTag: EFFECT_TAGS.UPDATE,
+    // ...
+  }
+} else {
+  // Create new fiber, mark as PLACEMENT
+  newFiber = {
+    type: element.type,
+    props: element.props,
+    dom: null,
+    alternate: null,
+    effectTag: EFFECT_TAGS.PLACEMENT,
+    // ...
+  }
+}
+```
+
+4. **Link Fibers**: Connect children as linked list
+
+```javascript
+if (isFirstChild) {
+  wipFiber.child = newFiber
+} else {
+  prevSibling.sibling = newFiber
+}
+```
+
+5. **Queue Deletions**: Remaining old fibers are marked for deletion
+
+```javascript
+oldFiberMap.forEach((fiber) => {
+  fiber.effectTag = EFFECT_TAGS.DELETION
+  state.deletions.push(fiber)
+})
+```
+
+### Key-Based Reconciliation
+
+Using keys dramatically improves list reconciliation performance:
+
+```javascript
+// ❌ Without keys - inefficient
+const items = ['A', 'B', 'C']
+items.map(item => createElement('li', null, item))
+
+// ✅ With keys - efficient
+items.map(item => createElement('li', { key: item }, item))
+```
+
+**Why keys matter:**
+
+Without keys, inserting at the start causes all items to update:
+```javascript
+// Before: [B, C]
+// After:  [A, B, C]
+// Without keys: Updates B→A, C→B, creates C (3 operations)
+// With keys:    Creates A, reuses B, reuses C (1 operation)
+```
+
+<Warning>
+  Never use array index as key for dynamic lists. Use stable, unique identifiers.
+</Warning>
+
+## Work Loop and Workers
+
+The asynchronous execution model breaks tree traversal into chunks using `requestIdleCallback`.
+
+### performUnitOfWork()
+
+Processes a single fiber unit:
+
+```javascript
+function performUnitOfWork(fiber) {
+  const isFunctionComponent = typeof fiber.type === 'function'
+  
+  // 1. Update the fiber (run component or create DOM)
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber)
+  } else {
+    updateHostComponent(fiber)
+  }
+  
+  // 2. Return next unit of work
+  if (fiber.child) {
+    return fiber.child // Depth-first: go to child
+  }
+  
+  let nextFiber = fiber
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling // Go to sibling
+    }
+    nextFiber = nextFiber.parent // Go up to parent
+  }
+}
+```
+
+**Traversal order** (depth-first):
+```
+1. App
+2. ├─ Header
+3. │  ├─ Nav
+4. │  └─ Logo
+5. ├─ Main
+6. │  └─ Article
+7. │     ├─ H1
+8. │     ├─ P
+9. │     └─ Img
+10.└─ Footer
+```
+
+### workLoop()
+
+Main concurrent rendering loop:
+
+```javascript
+const workLoop = (deadline) => {
+  const state = getState()
+  let shouldYield = false
+  
+  while ((state.nextUnitOfWork || workQueue.length > 0) && !shouldYield) {
+    if (!state.nextUnitOfWork && workQueue.length > 0) {
+      // Start next queued root
+      const nextRoot = workQueue.shift()
+      state.wipRoot = nextRoot
+      state.nextUnitOfWork = nextRoot
+    }
+    
+    if (state.nextUnitOfWork) {
+      state.nextUnitOfWork = performUnitOfWork(state.nextUnitOfWork)
+    }
+    
+    // Yield if less than 1ms remaining
+    shouldYield = deadline.timeRemaining() < 1
+  }
+  
+  // All work done - commit to DOM
+  if (!state.nextUnitOfWork && state.wipRoot) {
+    commitRoot()
+  }
+  
+  // Schedule next work loop
+  if (state.nextUnitOfWork || workQueue.length > 0) {
+    rIC(workLoop)
+  }
+}
+```
+
+**Time slicing:**
+- Work is split into 1ms chunks
+- Browser can handle urgent tasks between chunks
+- Prevents janky UI during heavy renders
+
+<Tip>
+  The work loop uses `requestIdleCallback` (or `setTimeout` fallback) to run work when the browser is idle.
+</Tip>
+
+## Commit Phase
+
+The commit phase executes DOM mutations synchronously to avoid visual inconsistencies.
+
+### commitRoot()
+
+Commits all accumulated changes to the DOM:
+
+```javascript
+function commitRoot() {
+  const state = getState()
+  
+  // 1. Execute deletions first
+  state.deletions.forEach(commitWork)
+  
+  const finishedWork = state.wipRoot
+  
+  // 2. Swap tree pointers
+  state.currentRoot = finishedWork
+  
+  // 3. Commit new/updated fibers
+  commitWork(finishedWork.child)
+  
+  // 4. Cleanup
+  if (state.wipRoot === finishedWork) {
+    state.wipRoot = null
+  }
+}
+```
+
+### commitWork()
+
+Applies mutations for a single fiber:
+
+```javascript
+function commitWork(fiber) {
+  if (!fiber) return
+  
+  // Find DOM parent
+  let domParentFiber = fiber.parent
+  while (domParentFiber && !domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent
+  }
+  const domParent = domParentFiber.dom
+  
+  // Apply effect
+  if (fiber.effectTag === EFFECT_TAGS.PLACEMENT) {
+    if (fiber.dom != null) {
+      domParent.appendChild(fiber.dom)
+    }
+    runLayoutEffects(fiber)
+    runNormalEffects(fiber)
+  } 
+  else if (fiber.effectTag === EFFECT_TAGS.UPDATE) {
+    cancelEffects(fiber)
+    if (fiber.dom != null) {
+      updateDom(fiber.dom, fiber.alternate.props, fiber.props)
+    }
+    runLayoutEffects(fiber)
+    runNormalEffects(fiber)
+  }
+  else if (fiber.effectTag === EFFECT_TAGS.HYDRATE) {
+    // Attach events, don't append to DOM
+    if (fiber.dom != null) {
+      updateDom(fiber.dom, {}, fiber.props)
+    }
+    runLayoutEffects(fiber)
+    runNormalEffects(fiber)
+  }
+  else if (fiber.effectTag === EFFECT_TAGS.DELETION) {
+    cancelEffectsDeep(fiber)
+    commitDeletion(fiber, domParent)
+    return
+  }
+  
+  // Recurse to children and siblings
+  commitWork(fiber.child)
+  commitWork(fiber.sibling)
+}
+```
+
+**Commit phase order:**
+
+1. **Deletions** - Remove old nodes
+2. **Layout effects** - Run `useLayoutEffect` (synchronous)
+3. **DOM mutations** - Apply PLACEMENT/UPDATE
+4. **Browser paint** - Visual update
+5. **Normal effects** - Run `useEffect` (async)
+
+## Error Boundaries
+
+Error handling integrates directly into the reconciliation loop:
+
+```javascript
+try {
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber)
+  } else {
+    updateHostComponent(fiber)
+  }
+} catch (error) {
+  // Traverse upwards to find nearest ErrorBoundary
+  let boundaryFiber = fiber.parent
+  
+  while (boundaryFiber) {
+    if (boundaryFiber.type?.ryunix_type === 'RYUNIX_ERROR_BOUNDARY') {
+      // Found boundary - assign error and rewind
+      boundaryFiber.stateError = error
+      fiber.child = null // Discard corrupted children
+      return boundaryFiber // Resume work at boundary
+    }
+    boundaryFiber = boundaryFiber.parent
+  }
+  
+  // No boundary found - fatal error
+  console.error('[Ryunix] Fatal Uncaught Error:', error)
+  state.nextUnitOfWork = null
+}
+```
+
+<Note>
+  When an error is caught, RyunixJS climbs the fiber tree to find the nearest ErrorBoundary, then rewinds the work pointer to that boundary for safe recovery.
+</Note>
+
+## Component Updates
+
+### Function Components
+
+```javascript
+const updateFunctionComponent = (fiber) => {
+  const state = getState()
+  
+  // Setup hook context
+  state.wipFiber = fiber
+  state.hookIndex = 0
+  state.wipFiber.hooks = []
+  
+  // Execute component function
+  let children = [fiber.type(fiber.props)]
+  
+  // Handle context providers
+  if (fiber.type._contextId && fiber.props.value !== undefined) {
+    fiber._contextId = fiber.type._contextId
+    fiber._contextValue = fiber.props.value
+  }
+  
+  // Reconcile children
+  reconcileChildren(fiber, children)
+}
+```
+
+### Host Components
+
+```javascript
+const updateHostComponent = (fiber) => {
+  const state = getState()
+  
+  // Create or reuse DOM node
+  if (!fiber.dom) {
+    if (state.isHydrating && state.hydrateCursor) {
+      // Hydration mode - match existing DOM
+      const domNode = state.hydrateCursor
+      const isMatch = validateHydrationMatch(fiber, domNode)
+      
+      if (isMatch) {
+        fiber.dom = domNode
+        fiber.effectTag = EFFECT_TAGS.HYDRATE
+        state.hydrateCursor = domNode.firstChild
+      } else {
+        // Mismatch - fall back to CSR
+        state.isHydrating = false
+        fiber.dom = createDom(fiber)
+        fiber.effectTag = EFFECT_TAGS.PLACEMENT
+      }
+    } else {
+      // Normal CSR mode - create new DOM
+      fiber.dom = createDom(fiber)
+    }
+  }
+  
+  // Reconcile children
+  const children = fiber.props?.children || []
+  reconcileChildren(fiber, children)
+}
+```
+
+## Performance Optimization
+
+### Memoization
+
+Prevent unnecessary reconciliation with `memo()`:
+
+```javascript
+import { memo } from '@unsetsoft/ryunixjs'
+
+const ExpensiveComponent = memo(({ data }) => {
+  // Only re-renders if data changes
+  return createElement('div', null, expensiveCalculation(data))
+})
+```
+
+### Key Stability
+
+Use stable keys for efficient list updates:
+
+```javascript
+// ✅ Good - stable unique keys
+const todos = [
+  { id: 1, text: 'Learn RyunixJS' },
+  { id: 2, text: 'Build app' }
+]
+todos.map(todo => 
+  createElement('li', { key: todo.id }, todo.text)
+)
+
+// ❌ Bad - unstable keys
+todos.map((todo, index) => 
+  createElement('li', { key: index }, todo.text)
+)
+```
+
+### Lazy Loading
+
+Split large component trees:
+
+```javascript
+import { lazy, Suspense } from '@unsetsoft/ryunixjs'
+
+const HeavyChart = lazy(() => import('./HeavyChart'))
+
+const Dashboard = () => {
+  return createElement(
+    Suspense,
+    { fallback: 'Loading chart...' },
+    createElement(HeavyChart)
+  )
+}
+```
+
+## Debugging
+
+### Fiber Inspection
+
+Access fiber tree from DOM nodes:
+
+```javascript
+// Get fiber from DOM element
+const element = document.getElementById('my-component')
+const fiber = element.__ryunix_fiber__
+
+console.log({
+  type: fiber.type,
+  props: fiber.props,
+  parent: fiber.parent,
+  hooks: fiber.hooks
+})
+```
+
+### Effect Tags
+
+Understand what's being committed:
+
+```javascript
+const EFFECT_TAGS = {
+  PLACEMENT: 'PLACEMENT',   // Create and insert
+  UPDATE: 'UPDATE',         // Update props
+  DELETION: 'DELETION',     // Remove from DOM
+  HYDRATE: 'HYDRATE'        // Attach to existing DOM
+}
+```
+
+## Related
+
+- [Rendering](/core/rendering) - Rendering modes and SSR
+- [Error Boundaries](/core/error-boundaries) - Error handling deep dive
+- [State Management](/core/state-management) - State and updates

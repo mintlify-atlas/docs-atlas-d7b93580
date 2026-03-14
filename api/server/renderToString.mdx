@@ -1,0 +1,281 @@
+---
+title: "renderToString"
+description: "Synchronously render a RyunixJS element tree to an HTML string for server-side rendering"
+icon: "code"
+---
+
+## Overview
+
+`renderToString()` renders a RyunixJS element tree to a static HTML string. This is the primary function for server-side rendering (SSR) in RyunixJS.
+
+## Signature
+
+```javascript
+renderToString(element: RyunixElement): string
+```
+
+<ParamField path="element" type="RyunixElement" required>
+  The root RyunixJS element to render. Created with `createElement()` or JSX.
+</ParamField>
+
+## Return Value
+
+Returns a string containing the rendered HTML.
+
+## Usage
+
+### Basic Server Rendering
+
+```javascript server.js
+import { renderToString, createElement } from '@unsetsoft/ryunixjs'
+import App from './App'
+
+const html = renderToString(createElement(App))
+console.log(html)
+// Output: <div>...</div>
+```
+
+### With Express Server
+
+```javascript server.js
+import express from 'express'
+import { renderToString, createElement } from '@unsetsoft/ryunixjs'
+import App from './App'
+
+const app = express()
+
+app.get('*', (req, res) => {
+  const html = renderToString(createElement(App, { url: req.url }))
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>My App</title>
+      </head>
+      <body>
+        <div id="root">${html}</div>
+        <script src="/bundle.js"></script>
+      </body>
+    </html>
+  `)
+})
+
+app.listen(3000)
+```
+
+### With State and Context
+
+```javascript server.js
+import { renderToString, createElement, createContext } from '@unsetsoft/ryunixjs'
+
+const UserContext = createContext('user-context', null)
+
+function App() {
+  const user = UserContext.useContext()
+  return createElement('div', null, `Hello, ${user.name}!`)
+}
+
+const html = renderToString(
+  createElement(UserContext.Provider, 
+    { value: { name: 'Alice' } },
+    createElement(App)
+  )
+)
+
+console.log(html)
+// Output: <div>Hello, Alice!</div>
+```
+
+## Behavior
+
+### HTML Escaping
+
+All text content is automatically escaped to prevent XSS attacks:
+
+```javascript
+renderToString(createElement('div', null, '<script>alert("xss")</script>'))
+// Output: <div>&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</div>
+```
+
+The escaping function converts:
+- `&` → `&amp;`
+- `<` → `&lt;`
+- `>` → `&gt;`
+- `"` → `&quot;`
+- `'` → `&#039;`
+
+Source: `server.js:5-13`
+
+### Style Object Conversion
+
+Style objects are converted to CSS strings:
+
+```javascript
+renderToString(
+  createElement('div', { 
+    style: { backgroundColor: 'red', fontSize: '16px' } 
+  })
+)
+// Output: <div style="background-color:red;font-size:16px"></div>
+```
+
+Source: `server.js:15-21`
+
+### Void Elements
+
+Self-closing elements are handled correctly:
+
+```javascript
+renderToString(createElement('img', { src: '/logo.png', alt: 'Logo' }))
+// Output: <img src="/logo.png" alt="Logo" />
+```
+
+Void elements: `area`, `base`, `br`, `col`, `embed`, `hr`, `img`, `input`, `link`, `meta`, `param`, `source`, `track`, `wbr`
+
+Source: `server.js:23-26`
+
+### Component Rendering
+
+Function components are executed and rendered:
+
+```javascript
+function Greeting({ name }) {
+  return createElement('h1', null, `Hello, ${name}!`)
+}
+
+renderToString(createElement(Greeting, { name: 'World' }))
+// Output: <h1>Hello, World!</h1>
+```
+
+### Fragment Support
+
+Fragments render children without wrapper elements:
+
+```javascript
+import { Fragment } from '@unsetsoft/ryunixjs'
+
+renderToString(
+  createElement(Fragment, null,
+    createElement('h1', null, 'Title'),
+    createElement('p', null, 'Content')
+  )
+)
+// Output: <h1>Title</h1><p>Content</p>
+```
+
+Source: `server.js:45-48`
+
+### Context Providers
+
+Context providers work transparently during SSR:
+
+```javascript
+const ThemeContext = createContext('theme', 'light')
+
+renderToString(
+  createElement(ThemeContext.Provider,
+    { value: 'dark' },
+    createElement(ThemedComponent)
+  )
+)
+```
+
+Context values are tracked in SSR state and passed to nested components.
+
+Source: `server.js:50-74`
+
+### Island Architecture
+
+Client components with `ryunix_client_id` are wrapped with hydration markers:
+
+```javascript
+// Component marked as client-side island
+function Counter() { /* ... */ }
+Counter.ryunix_client_id = 'Counter'
+
+renderToString(createElement(Counter, { count: 0 }))
+// Output: <div data-ryunix-island="Counter" data-props='{"count":0}'>...</div>
+```
+
+Source: `server.js:79-85`
+
+## Common Patterns
+
+### SEO-Friendly Rendering
+
+```javascript
+import { renderToString } from '@unsetsoft/ryunixjs'
+
+function renderPage(App, props, metadata) {
+  const html = renderToString(createElement(App, props))
+  
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${metadata.title}</title>
+        <meta name="description" content="${metadata.description}">
+        <link rel="canonical" href="${metadata.canonical}">
+      </head>
+      <body>
+        <div id="root">${html}</div>
+        <script src="/app.js"></script>
+      </body>
+    </html>
+  `
+}
+```
+
+### Static Site Generation
+
+```javascript
+import fs from 'fs'
+import { renderToString } from '@unsetsoft/ryunixjs'
+
+const routes = ['/', '/about', '/contact']
+
+routes.forEach(route => {
+  const html = renderToString(createElement(App, { route }))
+  const fullHtml = `<!DOCTYPE html><html>...${html}...</html>`
+  
+  fs.writeFileSync(`dist${route === '/' ? '/index' : route}.html`, fullHtml)
+})
+```
+
+### Error Handling
+
+```javascript
+try {
+  const html = renderToString(createElement(App))
+  res.send(html)
+} catch (error) {
+  console.error('SSR Error:', error)
+  res.status(500).send('Error rendering page')
+}
+```
+
+## Performance Considerations
+
+- `renderToString()` is **synchronous** and blocks the event loop
+- For streaming responses, use [`renderToReadableStream()`](/api/server/renderToReadableStream)
+- Avoid expensive computations in component render functions
+- Use memoization for frequently rendered components
+
+## Limitations
+
+<Warning>
+  Hooks like `useEffect`, `useLayoutEffect`, and `useRef` are no-ops during SSR. They only execute on the client after hydration.
+</Warning>
+
+- DOM APIs (`window`, `document`) are not available during SSR
+- Event handlers are not attached during SSR (only during hydration)
+- State from `useStore` and `useReducer` returns initial values
+
+## See Also
+
+- [`renderToReadableStream()`](/api/server/renderToReadableStream) - Streaming SSR alternative
+- [`hydrate()`](/api/hydrate) - Client-side hydration of SSR content
+- [`createElement()`](/api/createElement) - Create RyunixJS elements

@@ -1,0 +1,242 @@
+---
+title: "preload"
+description: "Preload lazy components before they're needed to improve perceived performance"
+icon: "download"
+---
+
+## Overview
+
+`preload()` triggers the loading of a lazy component before it's actually rendered, reducing wait time when the component is eventually needed.
+
+## Signature
+
+```javascript
+preload(importFn: () => Promise<Module>): Promise<Module>
+```
+
+<ParamField path="importFn" type="Function" required>
+  The same dynamic import function passed to `lazy()`. Returns a Promise that resolves to the module.
+</ParamField>
+
+## Return Value
+
+Returns a Promise that resolves when the module has loaded.
+
+## Usage
+
+### Preload on Hover
+
+```javascript
+import { lazy, preload } from '@unsetsoft/ryunixjs'
+
+const HeavyComponent = lazy(() => import('./HeavyComponent'))
+
+function Link() {
+  return (
+    <a 
+      href="/heavy"
+      onMouseEnter={() => preload(() => import('./HeavyComponent'))}
+    >
+      Go to Heavy Page
+    </a>
+  )
+}
+```
+
+### Preload on Route Change Intent
+
+```javascript
+import { lazy, preload } from '@unsetsoft/ryunixjs'
+
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Profile = lazy(() => import('./pages/Profile'))
+
+function Navigation() {
+  return (
+    <nav>
+      <a 
+        href="/dashboard"
+        onMouseEnter={() => preload(() => import('./pages/Dashboard'))}
+      >
+        Dashboard
+      </a>
+      <a 
+        href="/profile"
+        onMouseEnter={() => preload(() => import('./pages/Profile'))}
+      >
+        Profile
+      </a>
+    </nav>
+  )
+}
+```
+
+### Conditional Preloading
+
+```javascript
+import { lazy, preload, useEffect } from '@unsetsoft/ryunixjs'
+
+const AdminPanel = lazy(() => import('./AdminPanel'))
+
+function App({ isAdmin }) {
+  useEffect(() => {
+    // Preload admin panel if user is admin
+    if (isAdmin) {
+      preload(() => import('./AdminPanel'))
+    }
+  }, [isAdmin])
+  
+  return (
+    <div>
+      {isAdmin && (
+        <Suspense fallback={<div>Loading...</div>}>
+          <AdminPanel />
+        </Suspense>
+      )}
+    </div>
+  )
+}
+```
+
+## Implementation
+
+The `preload()` function simply invokes the import function:
+
+```javascript
+const preload = (importFn) => {
+  return importFn()
+}
+```
+
+Source: `lazy.js:125-127`
+
+This starts the module download immediately without waiting for the component to render.
+
+## Common Patterns
+
+### Preload Critical Routes
+
+```javascript
+import { preload } from '@unsetsoft/ryunixjs'
+
+// Preload critical routes on app initialization
+const preloadCriticalRoutes = () => {
+  preload(() => import('./pages/Home'))
+  preload(() => import('./pages/Dashboard'))
+  preload(() => import('./pages/Settings'))
+}
+
+// Call when app initializes
+preloadCriticalRoutes()
+```
+
+### Smart Preloading
+
+```javascript
+import { lazy, preload, useEffect } from '@unsetsoft/ryunixjs'
+
+const HeavyComponent = lazy(() => import('./HeavyComponent'))
+
+function App() {
+  useEffect(() => {
+    // Preload after initial render is complete
+    const timer = setTimeout(() => {
+      preload(() => import('./HeavyComponent'))
+    }, 2000)
+    
+    return () => clearTimeout(timer)
+  }, [])
+  
+  return <div>App</div>
+}
+```
+
+### Preload on Scroll
+
+```javascript
+import { lazy, preload, useEffect, useRef } from '@unsetsoft/ryunixjs'
+
+const BelowFoldComponent = lazy(() => import('./BelowFoldComponent'))
+
+function Page() {
+  const triggerRef = useRef(null)
+  
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        preload(() => import('./BelowFoldComponent'))
+      }
+    })
+    
+    if (triggerRef.current) {
+      observer.observe(triggerRef.current)
+    }
+    
+    return () => observer.disconnect()
+  }, [])
+  
+  return (
+    <div>
+      <div>Above fold content</div>
+      <div ref={triggerRef} style={{ height: '100vh' }}>
+        <Suspense fallback={<div>Loading...</div>}>
+          <BelowFoldComponent />
+        </Suspense>
+      </div>
+    </div>
+  )
+}
+```
+
+## Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Hover Intent" icon="hand-pointer">
+    Preload on hover for navigation links users are likely to click
+  </Card>
+  <Card title="Idle Time" icon="clock">
+    Preload during browser idle time using requestIdleCallback
+  </Card>
+  <Card title="User Behavior" icon="user">
+    Preload based on user patterns and analytics
+  </Card>
+  <Card title="Network-Aware" icon="wifi">
+    Skip preloading on slow connections (navigator.connection)
+  </Card>
+</CardGroup>
+
+## Network-Aware Preloading
+
+```javascript
+import { preload } from '@unsetsoft/ryunixjs'
+
+function smartPreload(importFn) {
+  // Check if user is on slow connection
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+  
+  if (connection) {
+    const type = connection.effectiveType
+    
+    // Don't preload on 2G/slow-2g
+    if (type === '2g' || type === 'slow-2g') {
+      return
+    }
+  }
+  
+  // Check data saver mode
+  if (connection?.saveData) {
+    return
+  }
+  
+  preload(importFn)
+}
+
+// Usage
+smartPreload(() => import('./HeavyComponent'))
+```
+
+## See Also
+
+- [`lazy()`](/api/utilities/lazy) - Lazy load components
+- [`Suspense`](/api/components/Suspense) - Handle loading states
+- [Code Splitting Guide](/advanced/lazy-suspense) - Detailed code splitting patterns

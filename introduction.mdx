@@ -1,0 +1,83 @@
+---
+title: Introduction to RyunixJS
+description: Learn about RyunixJS, a modern JavaScript framework for building fast, reactive user interfaces with a familiar developer experience.
+---
+
+## What is RyunixJS?
+
+RyunixJS is a modern JavaScript framework for building static websites and single-page applications (SPAs). Like React, Next.js, and Preact, RyunixJS allows you to build interactive user interfaces with a component-based architecture. However, RyunixJS is designed to be completely standalone without relying on React internally.
+
+This approach makes RyunixJS more manageable and flexible, allowing developers to shape it according to their specific needs. The framework provides its own reactivity system similar to Preact, but it doesn't follow React standards or conventions—instead, it offers a unique way to build SPAs with its own philosophy.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Standalone Architecture" icon="cube">
+    Built from the ground up without React dependencies, giving you complete control and a smaller footprint.
+  </Card>
+  <Card title="Reactive System" icon="bolt">
+    Built-in reactivity with hooks like `useStore` for state management without external dependencies.
+  </Card>
+  <Card title="Server-Side Rendering" icon="server">
+    Full SSR support with `renderToString` and `renderToReadableStream` for optimal performance.
+  </Card>
+  <Card title="Modern Tooling" icon="wrench">
+    CLI tool for scaffolding, development server, and build optimization out of the box.
+  </Card>
+  <Card title="Familiar Syntax" icon="code">
+    JSX support and component-based architecture for developers coming from React ecosystems.
+  </Card>
+  <Card title="Advanced Features" icon="sparkles">
+    Lazy loading, Suspense, portals, error boundaries, and server actions built-in.
+  </Card>
+</CardGroup>
+
+## Core APIs
+
+RyunixJS exports a comprehensive set of APIs for building applications:
+
+- **Component Creation**: `createElement`, `Fragment`, `cloneElement`, `isValidElement`
+- **Rendering**: `render`, `init`, `safeRender`, `hydrate`, `hydrateIslands`
+- **Server Rendering**: `renderToString`, `renderToReadableStream`
+- **Hooks**: Full suite of hooks for state, effects, and lifecycle management
+- **Performance**: `memo`, `lazy`, `Suspense`, `batchUpdates`, `Priority`
+- **Advanced**: `forwardRef`, `createPortal`, `ErrorBoundary`, `ServerBoundary`
+
+## Comparison to Other Frameworks
+
+### vs React
+- **Independent**: RyunixJS doesn't use React internally—it's a completely separate framework
+- **Smaller Bundle**: No React runtime means smaller production bundles
+- **Own Standards**: Follows its own conventions rather than React's patterns
+
+### vs Next.js
+- **Focused Scope**: RyunixJS focuses on client-side SPAs with SSR capabilities
+- **Simpler Routing**: File-based routing similar to Next.js but with a lighter approach
+- **Direct Control**: More direct control over the rendering and hydration process
+
+### vs Preact
+- **Similar Philosophy**: Both aim for smaller bundles and better performance
+- **No React Compat**: RyunixJS doesn't aim for React compatibility like Preact does
+- **Unique Reactivity**: Custom reactivity system tailored for RyunixJS patterns
+
+## When to Use RyunixJS
+
+<Note>
+RyunixJS is ideal for developers who want a lightweight, standalone framework without React's overhead.
+</Note>
+
+**Use RyunixJS when you want to:**
+- Build fast SPAs without React dependencies
+- Have full control over your framework without abstraction layers
+- Use a familiar component-based architecture
+- Leverage modern features like SSR, lazy loading, and Suspense
+- Keep bundle sizes small while maintaining rich functionality
+
+**Consider alternatives if you need:**
+- A large ecosystem of React-compatible libraries
+- Extensive community support and resources
+- Production-proven stability for large-scale applications
+
+## What's Next?
+
+Ready to get started? Check out the [Installation](/installation) guide to set up your development environment, or jump straight to the [Quickstart](/quickstart) to build your first RyunixJS app.

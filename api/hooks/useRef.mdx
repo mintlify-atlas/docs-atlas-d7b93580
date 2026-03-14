@@ -1,0 +1,358 @@
+---
+title: 'useRef'
+description: 'Create mutable references that persist across renders'
+icon: 'link'
+---
+
+## Overview
+
+`useRef` creates a mutable reference object that persists across renders. It's commonly used to access DOM elements directly or store mutable values that don't trigger re-renders when changed.
+
+## Signature
+
+```javascript
+const ref = useRef(initialValue)
+```
+
+## Parameters
+
+<ParamField path="initialValue" type="any">
+  The initial value for the `ref.current` property. Can be any type (primitive, object, DOM element, etc.).
+</ParamField>
+
+## Return Value
+
+Returns a ref object with a single property:
+
+```javascript
+{
+  current: initialValue
+}
+```
+
+The `current` property is mutable and can be changed without causing re-renders.
+
+## Usage
+
+### Accessing DOM Elements
+
+```javascript
+import { useRef, useEffect } from 'ryunix'
+
+function TextInput() {
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    // Focus the input on mount
+    inputRef.current?.focus()
+  }, [])
+
+  const handleClick = () => {
+    // Access DOM element directly
+    inputRef.current.value = 'Hello!'
+  }
+
+  return (
+    <div>
+      <input ref={inputRef} type="text" />
+      <button onClick={handleClick}>Set Value</button>
+    </div>
+  )
+}
+```
+
+### Storing Mutable Values
+
+```javascript
+function Timer() {
+  const [seconds, setSeconds] = useStore(0)
+  const intervalRef = useRef(null)
+
+  const startTimer = () => {
+    if (intervalRef.current !== null) return // Already running
+
+    intervalRef.current = setInterval(() => {
+      setSeconds(s => s + 1)
+    }, 1000)
+  }
+
+  const stopTimer = () => {
+    clearInterval(intervalRef.current)
+    intervalRef.current = null
+  }
+
+  useEffect(() => {
+    return () => {
+      // Cleanup interval on unmount
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+    }
+  }, [])
+
+  return (
+    <div>
+      <p>Seconds: {seconds}</p>
+      <button onClick={startTimer}>Start</button>
+      <button onClick={stopTimer}>Stop</button>
+    </div>
+  )
+}
+```
+
+### Previous Value Tracking
+
+```javascript
+function usePrevious(value) {
+  const ref = useRef()
+
+  useEffect(() => {
+    ref.current = value
+  }, [value])
+
+  return ref.current
+}
+
+function Counter() {
+  const [count, setCount] = useStore(0)
+  const prevCount = usePrevious(count)
+
+  return (
+    <div>
+      <p>Current: {count}</p>
+      <p>Previous: {prevCount}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  )
+}
+```
+
+### Canvas Drawing
+
+```javascript
+function Canvas() {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+
+    // Draw something
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(10, 10, 100, 100)
+  }, [])
+
+  return <canvas ref={canvasRef} width={400} height={400} />
+}
+```
+
+### Video/Audio Control
+
+```javascript
+function VideoPlayer({ src }) {
+  const videoRef = useRef(null)
+  const [playing, setPlaying] = useStore(false)
+
+  const togglePlay = () => {
+    if (playing) {
+      videoRef.current.pause()
+    } else {
+      videoRef.current.play()
+    }
+    setPlaying(!playing)
+  }
+
+  const seek = (seconds) => {
+    videoRef.current.currentTime = seconds
+  }
+
+  return (
+    <div>
+      <video ref={videoRef} src={src} />
+      <button onClick={togglePlay}>
+        {playing ? 'Pause' : 'Play'}
+      </button>
+      <button onClick={() => seek(0)}>Restart</button>
+    </div>
+  )
+}
+```
+
+### Measuring Elements
+
+```javascript
+function MeasuredDiv() {
+  const divRef = useRef(null)
+  const [dimensions, setDimensions] = useStore({ width: 0, height: 0 })
+
+  useEffect(() => {
+    const measureElement = () => {
+      if (divRef.current) {
+        const { offsetWidth, offsetHeight } = divRef.current
+        setDimensions({ width: offsetWidth, height: offsetHeight })
+      }
+    }
+
+    measureElement()
+    window.addEventListener('resize', measureElement)
+    return () => window.removeEventListener('resize', measureElement)
+  }, [])
+
+  return (
+    <div ref={divRef}>
+      <p>Width: {dimensions.width}px</p>
+      <p>Height: {dimensions.height}px</p>
+    </div>
+  )
+}
+```
+
+### Avoiding Stale Closures
+
+```javascript
+function Component({ onUpdate }) {
+  const [count, setCount] = useStore(0)
+  const onUpdateRef = useRef(onUpdate)
+
+  // Keep ref in sync with latest callback
+  useEffect(() => {
+    onUpdateRef.current = onUpdate
+  }, [onUpdate])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Always calls the latest onUpdate
+      onUpdateRef.current(count)
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [count])
+
+  return <div>Count: {count}</div>
+}
+```
+
+### Form Input Collection
+
+```javascript
+function Form() {
+  const inputRefs = useRef([])
+
+  const focusInput = (index) => {
+    inputRefs.current[index]?.focus()
+  }
+
+  const getAllValues = () => {
+    return inputRefs.current.map(input => input?.value || '')
+  }
+
+  return (
+    <div>
+      {[0, 1, 2].map(i => (
+        <input
+          key={i}
+          ref={el => inputRefs.current[i] = el}
+          placeholder={`Input ${i + 1}`}
+        />
+      ))}
+      <button onClick={() => console.log(getAllValues())}>Log Values</button>
+    </div>
+  )
+}
+```
+
+## Server-Side Rendering
+
+During SSR, `useRef` returns a simple object:
+
+```javascript
+if (state.isServerRendering) {
+  return { current: initialValue }
+}
+```
+
+The ref is properly initialized during hydration.
+
+## Implementation Details
+
+- Ref objects are stored in the fiber's hooks array
+- The same ref object is returned on every render (referential equality)
+- Mutating `ref.current` does NOT trigger re-renders
+- Refs persist across re-renders and component updates
+
+```javascript
+const hook = {
+  hookID: hookIndex,
+  type: RYUNIX_TYPES.RYUNIX_REF,
+  value: oldHook ? oldHook.value : { current: initialValue },
+}
+```
+
+## Ref vs State
+
+| Feature | useRef | useStore |
+|---------|--------|----------|
+| Triggers re-render | No | Yes |
+| Persists across renders | Yes | Yes |
+| Mutable | Yes | No (use setter) |
+| Can store any value | Yes | Yes |
+| Use for DOM access | Yes | No |
+| Use for component data | No | Yes |
+
+```javascript
+// ❌ Don't use ref for data that affects rendering
+const countRef = useRef(0)
+countRef.current++ // Component won't re-render
+return <div>{countRef.current}</div> // Shows stale value
+
+// ✅ Use state for data that affects rendering
+const [count, setCount] = useStore(0)
+setCount(count + 1) // Component re-renders
+return <div>{count}</div> // Shows updated value
+
+// ✅ Use ref for values that don't affect rendering
+const intervalRef = useRef(null)
+intervalRef.current = setInterval(...) // No re-render needed
+```
+
+## Best Practices
+
+1. **DOM access** - Primary use case for refs
+2. **Mutable values** - Store timers, subscriptions, previous values
+3. **Don't overuse** - Use state for data that affects rendering
+4. **Cleanup in effects** - Clear intervals/listeners stored in refs
+5. **Callback refs** - Use callback pattern for dynamic ref lists
+
+## Common Patterns
+
+### Auto-focus
+
+```javascript
+const inputRef = useRef(null)
+useEffect(() => {
+  inputRef.current?.focus()
+}, [])
+```
+
+### Scroll to Element
+
+```javascript
+const elementRef = useRef(null)
+const scrollToElement = () => {
+  elementRef.current?.scrollIntoView({ behavior: 'smooth' })
+}
+```
+
+### Instance Variables
+
+```javascript
+// Like class instance variables in React class components
+const instanceVar = useRef(initialValue)
+instanceVar.current = newValue // Doesn't cause re-render
+```
+
+## Related Hooks
+
+- [useEffect](/api/hooks/useEffect) - Often used with refs for DOM operations
+- [useCallback](/api/hooks/useCallback) - Memoize callbacks that use refs
+- [useLayoutEffect](/api/hooks/useEffect) - Synchronous DOM measurements with refs

@@ -1,0 +1,682 @@
+---
+title: Custom Loaders
+description: AST-driven loaders for Server Components and Server Actions
+icon: cog
+---
+
+Ryunix uses custom Webpack loaders to enable advanced features like Server Components (RSC) and Server Actions. These loaders leverage AST parsing and code transformation to seamlessly bridge server and client execution.
+
+## Overview
+
+Two primary loaders power the Ryunix ecosystem:
+
+1. **`ryunix-rsc-loader.mjs`** - Enables Island Architecture and Client Component detection
+2. **`ryunix-server-action-loader.mjs`** - Transforms Server Actions into client/server proxies
+
+**Location:** `/packages/ryunix-presets/webpack/loaders/`
+
+## RSC Loader
+
+### Purpose
+
+The `ryunix-rsc-loader.mjs` implements Island Architecture by detecting Client Components and registering them for selective hydration.
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-rsc-loader.mjs`
+
+### Detection Logic
+
+The loader automatically identifies Client Components:
+
+```javascript
+const isServer = content.includes('//@server') || content.includes('// @server');
+const isClient = content.includes('//@client') || content.includes('// @client');
+
+// Auto-detection: Use hooks = Client
+const hasHooks = /use(Store|Effect|LayoutEffect|Context|Ref|Memo|Id|Transition)/.test(content);
+
+if (isClient || (!isServer && hasHooks)) {
+  // This is a Client Component!
+}
+```
+
+**Auto-detected hooks:**
+- `useStore`
+- `useEffect`
+- `useLayoutEffect`
+- `useContext`
+- `useRef`
+- `useMemo`
+- `useId`
+- `useTransition`
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-rsc-loader.mjs:4-10`
+
+---
+
+### Transformation
+
+When a Client Component is detected:
+
+**Original:**
+```javascript
+// @client
+export default function Counter() {
+  const [count, setCount] = Ryunix.useState(0)
+  return <button onClick={() => setCount(count + 1)}>{count}</button>
+}
+```
+
+**Transformed:**
+```javascript
+// @client
+export default function Counter() {
+  const [count, setCount] = Ryunix.useState(0)
+  return <button onClick={() => setCount(count + 1)}>{count}</button>
+}
+
+/** Ryunix RSC Optimization **/
+try {
+  let _ryx_target = null;
+  if (typeof __webpack_exports__ !== 'undefined' && __webpack_exports__["default"]) {
+    _ryx_target = __webpack_exports__["default"];
+  } else if (typeof exports !== 'undefined' && exports.default) {
+    _ryx_target = exports.default;
+  } else if (typeof module !== 'undefined' && module.exports && module.exports.default) {
+    _ryx_target = module.exports.default;
+  }
+
+  if (_ryx_target && typeof _ryx_target === 'function') {
+    _ryx_target.ryunix_client_id = "a1b2c3d4";
+    if (typeof window !== 'undefined') {
+      window.__RYUNIX_ISLANDS__ = window.__RYUNIX_ISLANDS__ || {};
+      window.__RYUNIX_ISLANDS__["a1b2c3d4"] = _ryx_target;
+    }
+  }
+} catch (e) { }
+```
+
+**What it does:**
+
+1. **Hashes the file path** using MD5 (first 8 chars)
+2. **Tags the component** with `ryunix_client_id`
+3. **Registers globally** in `window.__RYUNIX_ISLANDS__`
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-rsc-loader.mjs:11-38`
+
+---
+
+### Island Architecture
+
+The RSC loader enables **selective hydration** of interactive components:
+
+<Steps>
+  <Step title="Server Renders HTML">
+    Server emits `<div data-ryunix-island="a1b2c3d4">...</div>`
+  </Step>
+  
+  <Step title="Client Loads Bundle">
+    RSC loader registers component in `window.__RYUNIX_ISLANDS__`
+  </Step>
+  
+  <Step title="Ryunix Hydrates Islands">
+    `hydrateIslands()` reads `data-ryunix-island` attributes
+  </Step>
+  
+  <Step title="Selective Mounting">
+    Only interactive components are hydrated, reducing JS execution
+  </Step>
+</Steps>
+
+**Benefits:**
+- Smaller JavaScript bundles
+- Faster Time to Interactive (TTI)
+- Progressive enhancement
+- Server Components ship zero JS
+
+**Source:** See loaders documentation commentary
+
+---
+
+### Configuration
+
+The loader is applied to all JS/JSX/RYX files:
+
+```javascript
+{
+  test: /\.(js|jsx|ryx)$/,
+  exclude: /node_modules/,
+  use: [
+    ryunixRequire.resolve('thread-loader'),
+    resolve(__dirname, 'loaders/ryunix-server-action-loader.mjs'),
+    resolve(__dirname, 'loaders/ryunix-rsc-loader.mjs'),  // <-- RSC Loader
+    {
+      loader: ryunixRequire.resolve('babel-loader'),
+      options: { /* ... */ }
+    }
+  ]
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:197-234`
+
+---
+
+### Debug Mode
+
+Enable debug logging:
+
+```javascript
+// ryunix.config.js
+export default {
+  debug: true
+}
+```
+
+**Console output:**
+
+```bash
+[RSC Loader Execution] Tagging Counter with ID a1b2c3d4
+```
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-rsc-loader.mjs:27-29`
+
+---
+
+## Server Action Loader
+
+### Purpose
+
+The `ryunix-server-action-loader.mjs` transforms Server Actions into isomorphic client/server proxies.
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs`
+
+See [Server Actions](/webpack/server-actions) for complete documentation.
+
+### Detection
+
+Only processes files starting with `// @server`:
+
+```javascript
+if (!/^\s*\/\/\s*@server/m.test(source)) {
+  return source; // Skip transformation
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:5-7`
+
+---
+
+### Babel AST Transformation
+
+Uses Babel to parse and transform exported async functions:
+
+```javascript
+const result = await babel.transformAsync(source, {
+  filename: this.resourcePath,
+  plugins: [
+    function({ types: t }) {
+      return {
+        visitor: {
+          ExportNamedDeclaration(path) {
+            const declaration = path.node.declaration;
+            
+            if (t.isFunctionDeclaration(declaration) && declaration.async) {
+              const name = declaration.id.name;
+              actionNames.push(name);
+              const actionId = `${hash}_${name}`;
+
+              if (!isServer) {
+                // Replace with proxy on client
+                path.replaceWith(
+                  t.exportNamedDeclaration(
+                    t.variableDeclaration("const", [
+                      t.variableDeclarator(
+                        t.identifier(name),
+                        t.callExpression(
+                          t.identifier('__ryunixCreateActionProxy'),
+                          [t.stringLiteral(actionId)]
+                        )
+                      )
+                    ])
+                  )
+                );
+              }
+            }
+          }
+        }
+      };
+    }
+  ]
+});
+```
+
+**What it detects:**
+- Exported async function declarations
+- Exported async arrow functions
+- Exported async function expressions
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:15-67`
+
+---
+
+### Client Transformation
+
+**Original:**
+```javascript
+// @server
+export async function getUser(id) {
+  return db.users.findById(id)
+}
+```
+
+**Client Build Output:**
+```javascript
+import { createActionProxy as __ryunixCreateActionProxy } from '@unsetsoft/ryunixjs';
+
+export const getUser = __ryunixCreateActionProxy("a1b2c3d4_getUser");
+```
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:82-85`
+
+---
+
+### Server Registration
+
+**Server Build Output:**
+```javascript
+export async function getUser(id) {
+  return db.users.findById(id)
+}
+
+// Ryunix Server Actions Registration
+if (typeof globalThis.__RYUNIX_SERVER_ACTIONS__ === 'undefined') {
+  globalThis.__RYUNIX_SERVER_ACTIONS__ = {};
+}
+globalThis.__RYUNIX_SERVER_ACTIONS__['a1b2c3d4_getUser'] = getUser;
+```
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:71-80`
+
+---
+
+### Configuration
+
+The loader runs **before** Babel:
+
+```javascript
+{
+  test: /\.(js|jsx|ryx)$/,
+  exclude: /node_modules/,
+  use: [
+    ryunixRequire.resolve('thread-loader'),
+    resolve(__dirname, 'loaders/ryunix-server-action-loader.mjs'),  // <-- Server Action Loader
+    resolve(__dirname, 'loaders/ryunix-rsc-loader.mjs'),
+    {
+      loader: ryunixRequire.resolve('babel-loader'),
+      options: { /* ... */ }
+    }
+  ]
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:197-234`
+
+---
+
+## Loader Pipeline
+
+Webpack processes loaders **bottom-to-top**:
+
+<Steps>
+  <Step title="Thread Loader">
+    Parallelizes subsequent loaders across workers
+  </Step>
+  
+  <Step title="Babel Loader">
+    Transpiles JSX → JS, modern syntax → compatible syntax
+  </Step>
+  
+  <Step title="RSC Loader">
+    Detects Client Components, appends registration code
+  </Step>
+  
+  <Step title="Server Action Loader">
+    Transforms `// @server` files into client/server proxies
+  </Step>
+</Steps>
+
+**Order in config (reversed):**
+
+```javascript
+use: [
+  'thread-loader',              // 1st (executed last)
+  'server-action-loader',       // 2nd
+  'rsc-loader',                 // 3rd
+  'babel-loader'                // 4th (executed first)
+]
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:200-234`
+
+---
+
+## Custom Loader Development
+
+### Add Your Own Loader
+
+You can add custom loaders via `webpack.module.rules`:
+
+```javascript
+// ryunix.config.js
+export default {
+  webpack: {
+    module: {
+      rules: [
+        {
+          test: /\.custom$/,
+          use: [
+            {
+              loader: './my-custom-loader.js',
+              options: {
+                flag: true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+### Loader Anatomy
+
+A Webpack loader is a function that transforms source code:
+
+```javascript
+// my-custom-loader.js
+export default function myLoader(source) {
+  const options = this.getOptions();
+  
+  // Transform source
+  const transformed = source.replace(/OLD/g, 'NEW');
+  
+  return transformed;
+}
+```
+
+**Async loader:**
+
+```javascript
+export default async function myAsyncLoader(source) {
+  const callback = this.async();
+  
+  try {
+    const result = await transformAsync(source);
+    callback(null, result);
+  } catch (err) {
+    callback(err);
+  }
+}
+```
+
+---
+
+## Built-in Loaders
+
+Ryunix includes several loaders out-of-the-box:
+
+| Loader | Purpose | Config |
+|--------|---------|--------|
+| **babel-loader** | Transpiles JSX and modern JS | Preset: `@babel/preset-react` |
+| **thread-loader** | Parallelizes transpilation | Default enabled |
+| **css-loader** | Processes CSS imports | Default enabled |
+| **style-loader** | Injects CSS into DOM (dev) | Dev only |
+| **MiniCssExtractPlugin.loader** | Extracts CSS to files (prod) | Production only |
+| **postcss-loader** | Processes PostCSS plugins | User `postcss.config.js` |
+| **@mdx-js/loader** | Compiles MDX files | If `mdx: true` |
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:176-493`
+
+---
+
+## CSS Loaders
+
+### Development
+
+```javascript
+{
+  test: /\.(s[ac]ss|css)$/i,
+  exclude: /node_modules/,
+  use: [
+    ryunixRequire.resolve('style-loader'),  // Injects <style> tags
+    ryunixRequire.resolve('css-loader'),    // Resolves @import and url()
+    {
+      loader: ryunixRequire.resolve('postcss-loader'),
+      options: {
+        postcssOptions: {
+          plugins: postcssPlugins  // User's postcss.config.js
+        }
+      }
+    }
+  ]
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:474-492`
+
+---
+
+### Production
+
+```javascript
+{
+  test: /\.(s[ac]ss|css)$/i,
+  exclude: /node_modules/,
+  use: [
+    MiniCssExtractPlugin.loader,  // Extracts to .css files
+    ryunixRequire.resolve('css-loader'),
+    {
+      loader: ryunixRequire.resolve('postcss-loader'),
+      options: {
+        postcssOptions: {
+          plugins: postcssPlugins
+        }
+      }
+    }
+  ]
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:474-492`
+
+---
+
+## PostCSS Integration
+
+Ryunix automatically loads PostCSS plugins from `postcss.config.js`:
+
+**User config:**
+```javascript
+// postcss.config.js
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {}
+  }
+}
+```
+
+**Loader resolution:**
+```javascript
+const resolvePostcssPlugins = () => {
+  const configPath = resolveApp(dir, 'postcss.config.js')
+  if (!fs.existsSync(configPath)) return []
+  
+  const config = projectRequire(configPath)
+  const plugins = config.plugins || {}
+  
+  return Object.entries(plugins).map(([name, opts]) => {
+    const pluginFn = projectRequire(name)  // Resolve from user's node_modules
+    const fn = pluginFn.default || pluginFn
+    return opts && typeof opts === 'object' ? fn(opts) : fn()
+  })
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:82-99`
+
+---
+
+## MDX Loader
+
+Enable MDX support:
+
+```javascript
+// ryunix.config.js
+export default {
+  mdx: true
+}
+```
+
+**Loader config:**
+```javascript
+{
+  test: /\.mdx?$/,
+  use: [
+    {
+      loader: ryunixRequire.resolve('@mdx-js/loader'),
+      options: {
+        jsxImportSource: '@unsetsoft/ryunixjs',
+        providerImportSource: '@unsetsoft/ryunixjs',
+        remarkPlugins: [
+          remarkGfm,
+          remarkFrontmatter,
+          [remarkMdxFrontmatter, { name: 'frontmatter' }]
+        ],
+        rehypePlugins: [rehypeHighlight]
+      }
+    }
+  ]
+}
+```
+
+**Usage:**
+```mdx
+---
+title: My Post
+date: 2026-03-14
+---
+
+# Hello from MDX!
+
+<Button>Click me</Button>
+```
+
+**Access frontmatter:**
+```javascript
+import Post, { frontmatter } from './post.mdx'
+
+console.log(frontmatter.title) // "My Post"
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:176-195`
+
+---
+
+## Asset Loaders
+
+### Images
+
+```javascript
+{
+  test: /\.(jpg|jpeg|png|gif|svg|ico)$/,
+  exclude: /node_modules/,
+  type: 'asset/resource',
+  generator: {
+    filename: 'images/[name].[hash][ext]'
+  }
+}
+```
+
+**Usage:**
+```javascript
+import logo from './logo.png'
+
+<img src={logo} alt="Logo" />
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:237-244`
+
+---
+
+### Media Files
+
+```javascript
+{
+  test: /\.(mp3|mp4|pdf)$/,
+  exclude: /node_modules/,
+  type: 'asset/resource',
+  generator: {
+    filename: 'media/[name].[hash][ext]'
+  }
+}
+```
+
+**Usage:**
+```javascript
+import video from './intro.mp4'
+
+<video src={video} controls />
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:246-253`
+
+---
+
+## Server-Only Exclusions
+
+Client build excludes `.server.*` files:
+
+```javascript
+{
+  test: /\.(js|jsx|ryx)$/,
+  exclude: [
+    /node_modules/,
+    /\.server\.(js|jsx|ryx)$/  // Exclude server-only files
+  ],
+  use: [ /* ... */ ]
+}
+```
+
+**Example:**
+```javascript
+// db.server.js - Never bundled for client
+export const db = createDatabaseConnection()
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:461-472`
+
+---
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Mark Directives" icon="hashtag">
+    Use `// @client` or `// @server` for explicit component types
+  </Card>
+  
+  <Card title="Minimize Bundles" icon="minimize">
+    Prefer Server Components to reduce client JS
+  </Card>
+  
+  <Card title="Debug Mode" icon="bug">
+    Enable `debug: true` to trace loader execution
+  </Card>
+  
+  <Card title="PostCSS Plugins" icon="palette">
+    Configure `postcss.config.js` for Tailwind, Autoprefixer, etc.
+  </Card>
+</CardGroup>

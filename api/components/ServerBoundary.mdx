@@ -1,0 +1,287 @@
+---
+title: 'ServerBoundary'
+description: 'Component for wrapping server-rendered content that should be preserved during hydration'
+---
+
+## Overview
+
+`ServerBoundary` is a special component used to wrap content that is rendered exclusively on the server. During hydration, RyunixJS will skip this node's children, preserving the server-rendered HTML.
+
+This is useful for content that:
+- Is expensive to render on the client
+- Contains server-only data or secrets
+- Should remain static after initial page load
+- Needs to be SEO-friendly but doesn't require interactivity
+
+## Props
+
+<ParamField path="children" type="ReactNode" required>
+  The server-rendered content to preserve during hydration.
+</ParamField>
+
+<ParamField path="id" type="string">
+  Optional identifier for the server boundary. Useful for debugging and tracking which boundaries are being hydrated.
+</ParamField>
+
+## Usage
+
+### Basic server-only content
+
+```jsx
+import { ServerBoundary } from 'ryunixjs'
+
+function Page() {
+  return (
+    <div>
+      <h1>My Page</h1>
+      <ServerBoundary>
+        <ExpensiveServerComponent />
+      </ServerBoundary>
+    </div>
+  )
+}
+```
+
+### With identifier
+
+```jsx
+import { ServerBoundary } from 'ryunixjs'
+
+function ArticlePage({ article }) {
+  return (
+    <article>
+      <h1>{article.title}</h1>
+      <ServerBoundary id="article-metadata">
+        <ArticleMetadata article={article} />
+      </ServerBoundary>
+      <ServerBoundary id="article-content">
+        <ArticleContent content={article.content} />
+      </ServerBoundary>
+    </article>
+  )
+}
+```
+
+### Server-only data rendering
+
+```jsx
+import { ServerBoundary } from 'ryunixjs'
+
+// This component uses server-only APIs
+function ServerStats() {
+  const stats = getServerStats() // Only available on server
+  
+  return (
+    <div className="stats">
+      <p>Server uptime: {stats.uptime}</p>
+      <p>Memory usage: {stats.memory}</p>
+    </div>
+  )
+}
+
+function Dashboard() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <ServerBoundary id="server-stats">
+        <ServerStats />
+      </ServerBoundary>
+    </div>
+  )
+}
+```
+
+## Behavior
+
+### Server rendering
+
+On the server, ServerBoundary renders its children normally and wraps them in a container div with a special data attribute:
+
+```html
+<div data-ryunix-server="your-id" style="display: contents">
+  <!-- children rendered here -->
+</div>
+```
+
+The `display: contents` style ensures the wrapper doesn't affect layout.
+
+Source: `packages/core/src/lib/serverBoundary.js:11`
+
+### Client hydration
+
+During hydration, the RyunixJS reconciler:
+
+1. Detects the `data-ryunix-server` attribute
+2. Skips reconciliation of the children
+3. Preserves the server-rendered HTML as-is
+4. Avoids re-executing component logic
+
+This prevents:
+- Unnecessary client-side re-renders
+- Hydration mismatches
+- Execution of server-only code on the client
+
+### Ryunix type marker
+
+ServerBoundary is identified internally by the `ryunix_type` property:
+
+```js
+ServerBoundary.ryunix_type = 'RYUNIX_SERVER_BOUNDARY'
+```
+
+This allows the reconciler to handle server boundaries specially during hydration.
+
+## Common patterns
+
+### Static content sections
+
+Wrap static marketing content that doesn't need interactivity:
+
+```jsx
+function LandingPage() {
+  return (
+    <div>
+      <InteractiveHeader />
+      
+      <ServerBoundary id="hero">
+        <HeroSection />
+      </ServerBoundary>
+      
+      <ServerBoundary id="features">
+        <FeaturesGrid />
+      </ServerBoundary>
+      
+      <InteractiveSignupForm />
+    </div>
+  )
+}
+```
+
+### SEO-optimized content
+
+Render rich metadata and structured data on the server:
+
+```jsx
+function ProductPage({ product }) {
+  return (
+    <div>
+      <ServerBoundary id="seo-metadata">
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "name": product.name,
+            "description": product.description
+          })}
+        </script>
+      </ServerBoundary>
+      
+      <ProductDetails product={product} />
+    </div>
+  )
+}
+```
+
+### Expensive computations
+
+Prevent re-running expensive server-side computations on the client:
+
+```jsx
+function AnalyticsPage({ data }) {
+  return (
+    <div>
+      <h1>Analytics</h1>
+      <ServerBoundary id="charts">
+        <ExpensiveChartRendering data={processComplexData(data)} />
+      </ServerBoundary>
+    </div>
+  )
+}
+```
+
+## Best practices
+
+### Use meaningful IDs
+
+Provide descriptive IDs to make debugging easier:
+
+```jsx
+// Good
+<ServerBoundary id="user-profile-sidebar">
+  <UserSidebar />
+</ServerBoundary>
+
+// Less helpful
+<ServerBoundary id="boundary-1">
+  <UserSidebar />
+</ServerBoundary>
+```
+
+### Don't wrap interactive content
+
+Avoid wrapping components that need client-side interactivity:
+
+```jsx
+// Bad - button won't work
+<ServerBoundary>
+  <button onClick={handleClick}>Click me</button>
+</ServerBoundary>
+
+// Good - only static content
+<ServerBoundary>
+  <div className="static-content">
+    <p>This content never changes</p>
+  </div>
+</ServerBoundary>
+```
+
+### Combine with Suspense
+
+Use ServerBoundary with Suspense for optimal loading strategies:
+
+```jsx
+import { ServerBoundary, Suspense } from 'ryunixjs'
+
+function Page() {
+  return (
+    <div>
+      <ServerBoundary id="static-header">
+        <Header />
+      </ServerBoundary>
+      
+      <Suspense fallback={<Loading />}>
+        <DynamicContent />
+      </Suspense>
+    </div>
+  )
+}
+```
+
+## Performance benefits
+
+### Reduced JavaScript execution
+
+By skipping hydration of server-rendered content, you reduce:
+- Client-side JavaScript execution time
+- Memory usage from component state
+- CPU usage during initial page load
+
+### Faster time to interactive
+
+Less hydration work means:
+- Faster time to interactive (TTI)
+- Improved First Input Delay (FID)
+- Better overall performance metrics
+
+### Bundle size optimization
+
+Components wrapped in ServerBoundary can potentially be excluded from client bundles when using code splitting properly.
+
+## Limitations
+
+- Content inside ServerBoundary cannot have client-side interactivity
+- State changes won't trigger re-renders of server boundary content
+- Event handlers inside ServerBoundary won't work
+- The content remains exactly as rendered on the server
+
+For interactive content, use standard components without ServerBoundary.

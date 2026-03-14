@@ -1,0 +1,405 @@
+---
+title: 'Suspense'
+description: 'Component for handling asynchronous loading states with lazy-loaded components'
+---
+
+## Overview
+
+`Suspense` is a component that shows a fallback UI while lazy-loaded children are loading. It provides a declarative way to handle loading states in your application.
+
+Suspense integrates with RyunixJS's `lazy()` function to detect pending components and automatically show fallback content until all lazy children are loaded.
+
+## Props
+
+<ParamField path="fallback" type="ReactNode">
+  The UI to display while lazy components are loading. If not provided, nothing will be shown during loading.
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The component tree that may contain lazy-loaded components. Can include one or more lazy components.
+</ParamField>
+
+## Usage
+
+### Basic lazy loading
+
+```jsx
+import { Suspense, lazy } from 'ryunixjs'
+
+const LazyComponent = lazy(() => import('./MyComponent.js'))
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  )
+}
+```
+
+### Multiple lazy components
+
+```jsx
+import { Suspense, lazy } from 'ryunixjs'
+
+const Header = lazy(() => import('./Header.js'))
+const Sidebar = lazy(() => import('./Sidebar.js'))
+const Content = lazy(() => import('./Content.js'))
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading page...</div>}>
+      <Header />
+      <Sidebar />
+      <Content />
+    </Suspense>
+  )
+}
+```
+
+### Custom loading UI
+
+```jsx
+import { Suspense, lazy } from 'ryunixjs'
+
+const Dashboard = lazy(() => import('./Dashboard.js'))
+
+function LoadingSpinner() {
+  return (
+    <div className="spinner-container">
+      <div className="spinner" />
+      <p>Loading dashboard...</p>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <Dashboard />
+    </Suspense>
+  )
+}
+```
+
+### Nested Suspense boundaries
+
+```jsx
+import { Suspense, lazy } from 'ryunixjs'
+
+const UserProfile = lazy(() => import('./UserProfile.js'))
+const UserPosts = lazy(() => import('./UserPosts.js'))
+const UserComments = lazy(() => import('./UserComments.js'))
+
+function UserPage() {
+  return (
+    <div>
+      <Suspense fallback={<div>Loading profile...</div>}>
+        <UserProfile />
+      </Suspense>
+      
+      <Suspense fallback={<div>Loading posts...</div>}>
+        <UserPosts />
+      </Suspense>
+      
+      <Suspense fallback={<div>Loading comments...</div>}>
+        <UserComments />
+      </Suspense>
+    </div>
+  )
+}
+```
+
+## Behavior
+
+### Loading detection
+
+Suspense detects loading states by checking if any child components are lazy and still pending:
+
+1. Iterates through children (converts to array if needed)
+2. Checks if child is a lazy component using `child.type._isLazy`
+3. Gets loading status via `child.type._getStatus()`
+4. If any child has `PENDING` status, shows fallback
+
+Source: `packages/core/src/lib/lazy.js:85-99`
+
+### Fallback rendering
+
+When any lazy child is pending:
+- Renders the `fallback` prop
+- If no fallback provided, renders `null`
+- Children are not rendered to the DOM yet
+
+When all lazy children are loaded:
+- Renders children normally
+- Fallback is removed from the DOM
+- Component state is preserved
+
+### Server-side rendering
+
+During server-side rendering with background tasks enabled (`isSuspenseBackground`), Suspense will:
+- Render the actual children instead of fallback
+- Allow the server to capture the full component tree
+- Generate complete HTML with loaded content
+
+Source: `packages/core/src/lib/lazy.js:109`
+
+### State management
+
+Suspense uses internal state to track loading status:
+
+```js
+const [isLoaded, setIsLoaded] = useStore(false)
+```
+
+When loading completes:
+- Sets `isLoaded` to `true`
+- Triggers re-render to show children
+- Uses `useEffect` to monitor loading state changes
+
+Source: `packages/core/src/lib/lazy.js:86,101-105`
+
+## Integration with lazy()
+
+Suspense works seamlessly with the `lazy()` function:
+
+### Lazy component creation
+
+```js
+const LazyComponent = lazy(() => import('./Component.js'))
+```
+
+The `lazy()` function:
+- Returns a component with `_isLazy = true` marker
+- Provides `_getStatus()` method returning: `'pending'`, `'resolved'`, or `'rejected'`
+- Caches the loaded module for subsequent renders
+
+Source: `packages/core/src/lib/lazy.js:21-75`
+
+### Loading states
+
+```js
+const SUSPENSE_STATUS = {
+  PENDING: 'pending',
+  RESOLVED: 'resolved',
+  REJECTED: 'rejected'
+}
+```
+
+- **PENDING**: Component is loading
+- **RESOLVED**: Component loaded successfully
+- **REJECTED**: Component failed to load (throws to ErrorBoundary)
+
+Source: `packages/core/src/lib/lazy.js:8-12`
+
+## Common patterns
+
+### Route-based code splitting
+
+```jsx
+import { Suspense, lazy } from 'ryunixjs'
+import { useRouter } from 'ryunixjs/hooks'
+
+const Home = lazy(() => import('./routes/Home.js'))
+const About = lazy(() => import('./routes/About.js'))
+const Contact = lazy(() => import('./routes/Contact.js'))
+
+function App() {
+  const router = useRouter()
+  
+  return (
+    <Suspense fallback={<PageLoader />}>
+      {router.path === '/' && <Home />}
+      {router.path === '/about' && <About />}
+      {router.path === '/contact' && <Contact />}
+    </Suspense>
+  )
+}
+```
+
+### Progressive loading
+
+```jsx
+import { Suspense, lazy } from 'ryunixjs'
+
+const CriticalContent = lazy(() => import('./Critical.js'))
+const SecondaryContent = lazy(() => import('./Secondary.js'))
+
+function Page() {
+  return (
+    <div>
+      {/* Load critical content first */}
+      <Suspense fallback={<CriticalLoader />}>
+        <CriticalContent />
+      </Suspense>
+      
+      {/* Load secondary content after */}
+      <Suspense fallback={<SecondaryLoader />}>
+        <SecondaryContent />
+      </Suspense>
+    </div>
+  )
+}
+```
+
+### Error handling with ErrorBoundary
+
+```jsx
+import { Suspense, lazy, ErrorBoundary } from 'ryunixjs'
+
+const UserDashboard = lazy(() => import('./Dashboard.js'))
+
+function App() {
+  return (
+    <ErrorBoundary fallback={(error) => <ErrorUI error={error} />}>
+      <Suspense fallback={<LoadingUI />}>
+        <UserDashboard />
+      </Suspense>
+    </ErrorBoundary>
+  )
+}
+```
+
+### Preloading components
+
+Use the `preload()` function to start loading before rendering:
+
+```jsx
+import { Suspense, lazy, preload } from 'ryunixjs'
+
+const HeavyComponent = lazy(() => import('./Heavy.js'))
+
+// Start loading on hover
+function Menu() {
+  const handleMouseEnter = () => {
+    preload(() => import('./Heavy.js'))
+  }
+  
+  return (
+    <button onMouseEnter={handleMouseEnter}>
+      Show Heavy Component
+    </button>
+  )
+}
+
+function App() {
+  const [show, setShow] = useStore(false)
+  
+  return (
+    <div>
+      <Menu />
+      {show && (
+        <Suspense fallback={<Loading />}>
+          <HeavyComponent />
+        </Suspense>
+      )}
+    </div>
+  )
+}
+```
+
+Source: `packages/core/src/lib/lazy.js:125-127`
+
+## Best practices
+
+### Granular boundaries
+
+Use multiple Suspense boundaries for better user experience:
+
+```jsx
+// Good - granular loading states
+<div>
+  <Suspense fallback={<HeaderLoader />}>
+    <Header />
+  </Suspense>
+  <Suspense fallback={<ContentLoader />}>
+    <Content />
+  </Suspense>
+</div>
+
+// Less optimal - one big loading state
+<Suspense fallback={<PageLoader />}>
+  <Header />
+  <Content />
+</Suspense>
+```
+
+### Meaningful fallbacks
+
+Provide context-appropriate loading states:
+
+```jsx
+// Good
+<Suspense fallback={<UserProfileSkeleton />}>
+  <UserProfile />
+</Suspense>
+
+// Less helpful
+<Suspense fallback={<div>Loading...</div>}>
+  <UserProfile />
+</Suspense>
+```
+
+### Avoid over-suspending
+
+Don't wrap non-lazy components in Suspense:
+
+```jsx
+// Unnecessary
+<Suspense fallback={<Loading />}>
+  <RegularComponent />
+</Suspense>
+
+// Better
+<RegularComponent />
+```
+
+### Combine with ErrorBoundary
+
+Always wrap Suspense in ErrorBoundary to handle load failures:
+
+```jsx
+<ErrorBoundary fallback={<ErrorUI />}>
+  <Suspense fallback={<LoadingUI />}>
+    <LazyComponent />
+  </Suspense>
+</ErrorBoundary>
+```
+
+## Performance considerations
+
+### Code splitting benefits
+
+- Reduces initial bundle size
+- Faster initial page load
+- Components loaded on-demand
+- Better caching granularity
+
+### Loading optimization
+
+- Lazy components are cached after first load
+- Subsequent renders are synchronous
+- No re-fetching of already loaded modules
+- Efficient module reuse across components
+
+## Technical details
+
+### Ryunix type marker
+
+```js
+Suspense.type = RYUNIX_TYPES.RYUNIX_SUSPENSE
+```
+
+This allows the reconciler to identify and handle Suspense boundaries during rendering.
+
+### Children rendering
+
+When ready to render children, Suspense uses Fragment:
+
+```js
+return createElement(Fragment, { children })
+```
+
+This avoids adding extra DOM nodes while ensuring proper rendering.
+
+Source: `packages/core/src/lib/lazy.js:113`

@@ -1,0 +1,536 @@
+---
+title: State Management
+description: Advanced state management patterns including priority scheduling and update batching in RyunixJS
+---
+
+RyunixJS introduces a sophisticated state management system with **priority-based scheduling** and **update batching** to ensure critical user interactions don't drop frames during heavy renders.
+
+## Priority Levels
+
+RyunixJS defines five tiers of update urgency:
+
+```javascript
+import { Priority } from '@unsetsoft/ryunixjs'
+
+const Priority = {
+  IMMEDIATE: 1,      // User input (typing, clicks, drags)
+  USER_BLOCKING: 2,  // Hover events, fast scrolls
+  NORMAL: 3,         // Data fetching, generic state updates
+  LOW: 4,            // Analytics, prefetching
+  IDLE: 5            // Off-screen background tasks
+}
+```
+
+### Priority-Based Scheduling
+
+Updates are sorted and executed based on priority:
+
+```javascript
+import { scheduleUpdate, Priority } from '@unsetsoft/ryunixjs'
+
+// High priority - runs immediately
+scheduleUpdate(() => {
+  updateUserInput(value)
+}, Priority.IMMEDIATE)
+
+// Low priority - deferred until idle
+scheduleUpdate(() => {
+  trackAnalytics(event)
+}, Priority.LOW)
+```
+
+**How it works:**
+
+1. Updates are pushed to `pendingUpdates` queue with priority
+2. Queue is sorted by priority when processed
+3. Highest priority updates execute first
+4. Uses `requestIdleCallback` to flush updates when browser is idle
+
+```javascript
+const processPendingUpdates = (deadline) => {
+  // Sort by priority (ascending: 1, 2, 3, 4, 5)
+  pendingUpdates.sort((a, b) => a.priority - b.priority)
+  
+  while (pendingUpdates.length > 0 && deadline.timeRemaining() > 0) {
+    const update = pendingUpdates.shift()
+    update.callback()
+  }
+}
+```
+
+<Note>
+  Priority scheduling prevents low-priority updates from blocking critical user interactions.
+</Note>
+
+## Priority Hooks
+
+### useStorePriority
+
+Low-level state hook with priority support:
+
+```javascript
+import { useStorePriority, Priority } from '@unsetsoft/ryunixjs'
+
+const SearchBox = () => {
+  const [query, setQuery] = useStorePriority('')
+  
+  const handleInput = (e) => {
+    // Update with immediate priority for responsive input
+    setQuery(e.target.value, Priority.IMMEDIATE)
+  }
+  
+  return createElement('input', {
+    value: query,
+    onInput: handleInput
+  })
+}
+```
+
+**Implementation:**
+```javascript
+const useStorePriority = (initialState) => {
+  const reducer = (state, action) =>
+    typeof action === 'function' ? action.value(state) : action.value
+  
+  const [state, baseDispatch] = useReducer(reducer, initialState)
+  
+  const dispatch = (action, priority = Priority.NORMAL) => {
+    const wrappedAction = { value: action, priority }
+    scheduleUpdate(() => baseDispatch(wrappedAction), priority)
+  }
+  
+  return [state, dispatch]
+}
+```
+
+### useTransition
+
+Marks updates as non-urgent to keep UI responsive:
+
+```javascript
+import { useTransition, useStore } from '@unsetsoft/ryunixjs'
+
+const FilteredList = ({ items }) => {
+  const [query, setQuery] = useStore('')
+  const [filteredItems, setFilteredItems] = useStore(items)
+  const [isPending, startTransition] = useTransition()
+  
+  const handleSearch = (value) => {
+    setQuery(value) // Immediate - update input instantly
+    
+    startTransition(() => {
+      // Low priority - expensive filtering won't block input
+      const results = items.filter(item => 
+        item.name.toLowerCase().includes(value.toLowerCase())
+      )
+      setFilteredItems(results)
+    })
+  }
+  
+  return createElement('div', null,
+    createElement('input', {
+      value: query,
+      onInput: (e) => handleSearch(e.target.value)
+    }),
+    isPending && createElement('div', null, 'Updating...'),
+    filteredItems.map(item => /* ... */)
+  )
+}
+```
+
+**How it works:**
+
+1. Sets `isPending = true` immediately (Priority.IMMEDIATE)
+2. Wraps callback in `setTimeout` with Priority.LOW
+3. Executes callback in low-priority context
+4. Sets `isPending = false` when done (Priority.LOW)
+
+```javascript
+const useTransition = () => {
+  const [isPending, setIsPending] = useStorePriority(false)
+  
+  const startTransition = (callback) => {
+    setIsPending(true, Priority.IMMEDIATE)
+    
+    setTimeout(() => {
+      runWithPriority(Priority.LOW, () => {
+        callback()
+        setIsPending(false, Priority.LOW)
+      })
+    }, 0)
+  }
+  
+  return [isPending, startTransition]
+}
+```
+
+<Tip>
+  Use `useTransition` for expensive state updates that shouldn't block user input (filtering, sorting, complex calculations).
+</Tip>
+
+### useDeferredValue
+
+Defers value updates with automatic debouncing:
+
+```javascript
+import { useDeferredValue, useStore } from '@unsetsoft/ryunixjs'
+
+const AutocompleteSearch = ({ onSearch }) => {
+  const [query, setQuery] = useStore('')
+  const deferredQuery = useDeferredValue(query)
+  
+  useEffect(() => {
+    // API call only happens with deferred value
+    if (deferredQuery) {
+      onSearch(deferredQuery)
+    }
+  }, [deferredQuery])
+  
+  return createElement('input', {
+    value: query,
+    onInput: (e) => setQuery(e.target.value)
+  })
+}
+```
+
+**Implementation:**
+```javascript
+const useDeferredValue = (value) => {
+  const [deferredValue, setDeferredValue] = useStorePriority(value)
+  
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDeferredValue(value, Priority.LOW)
+    }, 100) // 100ms debounce
+    
+    return () => clearTimeout(timeout)
+  }, [value])
+  
+  return deferredValue
+}
+```
+
+- Debounces updates by 100ms
+- Uses Priority.LOW for deferred updates
+- Perfect for expensive derived state
+
+## Update Batching
+
+Batching groups multiple synchronous state updates into a single render cycle.
+
+### batchUpdates()
+
+Manually batch multiple updates:
+
+```javascript
+import { batchUpdates, useStore } from '@unsetsoft/ryunixjs'
+
+const Form = () => {
+  const [name, setName] = useStore('')
+  const [email, setEmail] = useStore('')
+  const [age, setAge] = useStore(0)
+  
+  const handleSubmit = (data) => {
+    batchUpdates(() => {
+      setName(data.name)   // }
+      setEmail(data.email) // } Single render
+      setAge(data.age)     // }
+    })
+  }
+  
+  return /* ... */
+}
+```
+
+**Without batching:**
+```javascript
+setName(data.name)   // Render 1
+setEmail(data.email) // Render 2
+setAge(data.age)     // Render 3
+// Total: 3 renders
+```
+
+**With batching:**
+```javascript
+batchUpdates(() => {
+  setName(data.name)
+  setEmail(data.email)
+  setAge(data.age)
+})
+// Total: 1 render
+```
+
+### Automatic Batching
+
+RyunixJS automatically batches updates in:
+
+- **Event handlers**: All updates in the same event are batched
+- **Lifecycle hooks**: Updates in `useEffect` callbacks
+
+```javascript
+const Counter = () => {
+  const [count, setCount] = useStore(0)
+  const [doubled, setDoubled] = useStore(0)
+  
+  const handleClick = () => {
+    // Automatically batched - single render
+    setCount(c => c + 1)
+    setDoubled(c => c * 2)
+  }
+  
+  return createElement('button', { onClick: handleClick }, count)
+}
+```
+
+<Note>
+  Event handlers automatically batch updates, but async callbacks (setTimeout, Promise.then) do not. Use `batchUpdates()` for async contexts.
+</Note>
+
+### Implementation
+
+```javascript
+let isBatching = false
+let pendingUpdates = []
+
+const batchUpdates = (callback) => {
+  const wasBatching = isBatching
+  isBatching = true
+  
+  try {
+    callback()
+  } finally {
+    isBatching = wasBatching
+    
+    if (!isBatching && pendingUpdates.length > 0) {
+      flushUpdates()
+    }
+  }
+}
+
+const queueUpdate = (update) => {
+  pendingUpdates.push(update)
+  
+  if (!isBatching) {
+    flushUpdates()
+  }
+}
+
+const flushUpdates = () => {
+  if (pendingUpdates.length === 0) return
+  
+  const updates = pendingUpdates
+  pendingUpdates = []
+  
+  updates.forEach(update => update())
+}
+```
+
+## Advanced Patterns
+
+### Priority Context
+
+Run code in a specific priority context:
+
+```javascript
+import { runWithPriority, Priority } from '@unsetsoft/ryunixjs'
+
+const trackEvent = (event) => {
+  runWithPriority(Priority.IDLE, () => {
+    // Analytics tracking runs at lowest priority
+    analytics.track(event)
+  })
+}
+
+const handleClick = () => {
+  runWithPriority(Priority.IMMEDIATE, () => {
+    // UI updates run at highest priority
+    updateUI()
+  })
+  
+  trackEvent('button_clicked')
+}
+```
+
+**Implementation:**
+```javascript
+let currentPriority = Priority.NORMAL
+
+const runWithPriority = (priority, callback) => {
+  const prevPriority = currentPriority
+  currentPriority = priority
+  
+  try {
+    callback()
+  } finally {
+    currentPriority = prevPriority
+  }
+}
+```
+
+### Optimistic Updates
+
+Combine priority and batching for optimistic UI:
+
+```javascript
+const TodoList = () => {
+  const [todos, setTodos] = useStore([])
+  const [isPending, startTransition] = useTransition()
+  
+  const addTodo = async (text) => {
+    const tempId = Date.now()
+    const optimisticTodo = { id: tempId, text, pending: true }
+    
+    // Immediate optimistic update
+    setTodos([...todos, optimisticTodo])
+    
+    try {
+      const saved = await api.createTodo(text)
+      
+      startTransition(() => {
+        // Low priority - replace temp with real todo
+        setTodos(todos.map(t => 
+          t.id === tempId ? saved : t
+        ))
+      })
+    } catch (error) {
+      // Immediate rollback on error
+      setTodos(todos.filter(t => t.id !== tempId))
+    }
+  }
+  
+  return /* ... */
+}
+```
+
+### Scheduled Updates
+
+Schedule updates for specific times:
+
+```javascript
+const Countdown = ({ targetDate }) => {
+  const [timeLeft, setTimeLeft] = useStore(calculateTimeLeft(targetDate))
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      batchUpdates(() => {
+        // Batch clock updates to avoid excessive renders
+        const newTimeLeft = calculateTimeLeft(targetDate)
+        setTimeLeft(newTimeLeft)
+      })
+    }, 1000)
+    
+    return () => clearInterval(interval)
+  }, [targetDate])
+  
+  return createElement('div', null, formatTime(timeLeft))
+}
+```
+
+## Performance Best Practices
+
+### 1. Use Appropriate Priorities
+
+```javascript
+// ✅ Good - user input is immediate
+const handleInput = (value) => {
+  setInputValue(value, Priority.IMMEDIATE)
+  
+  startTransition(() => {
+    // Expensive filtering is low priority
+    updateFilteredResults(value)
+  })
+}
+
+// ❌ Bad - everything is immediate
+const handleInput = (value) => {
+  setInputValue(value)
+  updateFilteredResults(value) // Blocks UI!
+}
+```
+
+### 2. Batch Related Updates
+
+```javascript
+// ✅ Good - batched updates
+const updateUserProfile = (data) => {
+  batchUpdates(() => {
+    setName(data.name)
+    setEmail(data.email)
+    setAvatar(data.avatar)
+  })
+}
+
+// ❌ Bad - separate renders
+const updateUserProfile = (data) => {
+  setName(data.name)
+  setEmail(data.email)
+  setAvatar(data.avatar)
+}
+```
+
+### 3. Defer Non-Critical Work
+
+```javascript
+// ✅ Good - deferred analytics
+const handleClick = () => {
+  updateUI() // Immediate
+  
+  runWithPriority(Priority.IDLE, () => {
+    trackAnalytics('button_click') // Deferred
+  })
+}
+
+// ❌ Bad - analytics blocks UI
+const handleClick = () => {
+  updateUI()
+  trackAnalytics('button_click')
+}
+```
+
+### 4. Memoize Expensive Computations
+
+```javascript
+import { useMemo } from '@unsetsoft/ryunixjs'
+
+const ExpensiveList = ({ items, filter }) => {
+  const filteredItems = useMemo(() => {
+    return items.filter(item => expensiveCheck(item, filter))
+  }, [items, filter])
+  
+  return filteredItems.map(/* ... */)
+}
+```
+
+## Debugging
+
+### Monitor Update Priority
+
+```javascript
+import { getCurrentPriority } from '@unsetsoft/ryunixjs'
+
+const MyComponent = () => {
+  useEffect(() => {
+    console.log('Current priority:', getCurrentPriority())
+  })
+  
+  return /* ... */
+}
+```
+
+### Track Batch Updates
+
+```javascript
+const originalBatchUpdates = batchUpdates
+
+const batchUpdates = (callback) => {
+  console.time('batch')
+  originalBatchUpdates(callback)
+  console.timeEnd('batch')
+}
+```
+
+## Related
+
+- [Hooks](/core/hooks) - State hooks reference
+- [Virtual DOM & Reconciliation](/core/virtual-dom-reconciliation) - How updates trigger reconciliation
+- [Rendering](/core/rendering) - Rendering pipeline

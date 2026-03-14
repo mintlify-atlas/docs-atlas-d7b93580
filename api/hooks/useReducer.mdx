@@ -1,0 +1,202 @@
+---
+title: 'useReducer'
+description: 'Manage complex state logic with reducer pattern'
+icon: 'gear'
+---
+
+## Overview
+
+`useReducer` is a hook for managing complex state logic in RyunixJS applications. It follows the reducer pattern popularized by Redux, allowing you to handle state transitions through actions.
+
+## Signature
+
+```javascript
+const [state, dispatch] = useReducer(reducer, initialState, init)
+```
+
+## Parameters
+
+<ParamField path="reducer" type="Function" required>
+  A pure function that takes the current state and an action, then returns the new state.
+  
+  Signature: `(state, action) => newState`
+</ParamField>
+
+<ParamField path="initialState" type="any" required>
+  The initial state value. Can be any type (primitive, object, array).
+</ParamField>
+
+<ParamField path="init" type="Function">
+  Optional initialization function. If provided, the initial state will be set to `init(initialState)`.
+  Useful for lazy initialization or computing initial state from props.
+</ParamField>
+
+## Return Value
+
+Returns an array with two elements:
+
+- `state` - The current state value
+- `dispatch` - Function to dispatch actions to the reducer
+
+## Usage
+
+### Basic Counter Example
+
+```javascript
+import { useReducer } from 'ryunix'
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment':
+      return { count: state.count + 1 }
+    case 'decrement':
+      return { count: state.count - 1 }
+    case 'reset':
+      return { count: 0 }
+    default:
+      return state
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, { count: 0 })
+
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
+      <button onClick={() => dispatch({ type: 'reset' })}>Reset</button>
+    </div>
+  )
+}
+```
+
+### Todo List Example
+
+```javascript
+function todoReducer(state, action) {
+  switch (action.type) {
+    case 'add':
+      return [...state, { id: Date.now(), text: action.text, done: false }]
+    case 'toggle':
+      return state.map(todo =>
+        todo.id === action.id ? { ...todo, done: !todo.done } : todo
+      )
+    case 'remove':
+      return state.filter(todo => todo.id !== action.id)
+    default:
+      return state
+  }
+}
+
+function TodoList() {
+  const [todos, dispatch] = useReducer(todoReducer, [])
+  const [input, setInput] = useStore('')
+
+  const addTodo = () => {
+    if (input.trim()) {
+      dispatch({ type: 'add', text: input })
+      setInput('')
+    }
+  }
+
+  return (
+    <div>
+      <input value={input} onChange={e => setInput(e.target.value)} />
+      <button onClick={addTodo}>Add</button>
+      <ul>
+        {todos.map(todo => (
+          <li key={todo.id}>
+            <input
+              type="checkbox"
+              checked={todo.done}
+              onChange={() => dispatch({ type: 'toggle', id: todo.id })}
+            />
+            {todo.text}
+            <button onClick={() => dispatch({ type: 'remove', id: todo.id })}>
+              Delete
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Lazy Initialization
+
+```javascript
+function init(initialCount) {
+  return { count: initialCount * 2 }
+}
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment':
+      return { count: state.count + 1 }
+    case 'decrement':
+      return { count: state.count - 1 }
+    default:
+      return state
+  }
+}
+
+function Counter({ initialCount = 0 }) {
+  // Initial state will be { count: initialCount * 2 }
+  const [state, dispatch] = useReducer(reducer, initialCount, init)
+
+  return <div>Count: {state.count}</div>
+}
+```
+
+## Error Handling
+
+The reducer function is wrapped in a try-catch block during development:
+
+```javascript
+function reducer(state, action) {
+  if (action.type === 'invalid') {
+    throw new Error('Invalid action')
+  }
+  return state
+}
+
+// In development, errors are logged to console
+// In production, errors propagate normally
+```
+
+## Implementation Details
+
+- Queues actions and processes them during the reconciliation phase
+- Updates are batched through `queueUpdate` and scheduled via `scheduleWork`
+- During SSR, returns the initial state with a no-op dispatch function
+- Validates that hooks are called in the correct context (development only)
+- Handles undefined actions with a warning in development mode
+
+## Server-Side Rendering
+
+During SSR, `useReducer` returns:
+- The initialized state (using `init` if provided)
+- A no-op dispatch function that does nothing
+
+```javascript
+if (state.isServerRendering) {
+  return [init ? init(initialState) : initialState, () => { }]
+}
+```
+
+## Best Practices
+
+1. **Keep reducers pure** - No side effects, API calls, or mutations
+2. **Use action types** - Define constants for action types to avoid typos
+3. **Normalize complex state** - Flatten nested structures for easier updates
+4. **Handle default cases** - Always return current state for unknown actions
+5. **Use functional updates** - Avoid directly mutating state objects
+
+## Related Hooks
+
+- [useStore](/api/hooks/useStore) - Simpler state management for basic use cases
+- [useTransition](/api/hooks/useTransition) - Mark reducer updates as non-urgent
+- [useContext](/api/hooks/useContext) - Share reducer state across components

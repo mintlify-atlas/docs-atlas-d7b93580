@@ -1,0 +1,288 @@
+---
+title: "forwardRef"
+description: "Forward refs from parent components to child DOM elements or components"
+icon: "arrow-right"
+---
+
+## Overview
+
+`forwardRef()` allows parent components to access a child component's DOM node or instance by passing a `ref` through the component.
+
+## Signature
+
+```javascript
+forwardRef(render: (props, ref) => RyunixElement): Component
+```
+
+<ParamField path="render" type="Function" required>
+  A render function that receives `(props, ref)` as arguments and returns a RyunixJS element.
+</ParamField>
+
+## Return Value
+
+Returns a component that forwards the `ref` to the render function.
+
+## Usage
+
+### Basic Ref Forwarding
+
+```javascript Input.jsx
+import { forwardRef } from '@unsetsoft/ryunixjs'
+
+const Input = forwardRef((props, ref) => {
+  return <input {...props} ref={ref} />
+})
+
+export default Input
+```
+
+### Using the Forwarded Ref
+
+```javascript App.jsx
+import { useRef } from '@unsetsoft/ryunixjs'
+import Input from './Input'
+
+function App() {
+  const inputRef = useRef(null)
+  
+  const handleFocus = () => {
+    inputRef.current.focus()
+  }
+  
+  return (
+    <div>
+      <Input ref={inputRef} placeholder="Enter text" />
+      <button onClick={handleFocus}>Focus Input</button>
+    </div>
+  )
+}
+```
+
+### With Additional Props
+
+```javascript FancyInput.jsx
+import { forwardRef } from '@unsetsoft/ryunixjs'
+
+const FancyInput = forwardRef((props, ref) => {
+  const { label, error, ...inputProps } = props
+  
+  return (
+    <div className="input-group">
+      {label && <label>{label}</label>}
+      <input ref={ref} {...inputProps} />
+      {error && <span className="error">{error}</span>}
+    </div>
+  )
+})
+
+export default FancyInput
+```
+
+## Implementation Details
+
+The `forwardRef` implementation extracts the `ref` from props and passes it as a second argument:
+
+```javascript
+const ForwardRefComponent = (props) => {
+  const { ref, ...restProps } = props || {}
+  return render(restProps, ref || null)
+}
+```
+
+Source: `forwardRef.js:17-20`
+
+### Component Metadata
+
+Forwarded ref components have special metadata for debugging:
+
+```javascript
+ForwardRefComponent.displayName = `ForwardRef(${render.displayName || render.name || 'Component'})`
+ForwardRefComponent._isForwardRef = true
+ForwardRefComponent._render = render
+```
+
+Source: `forwardRef.js:22-24`
+
+## Common Patterns
+
+### Custom Input Component
+
+```javascript
+import { forwardRef, useEffect } from '@unsetsoft/ryunixjs'
+
+const AutoFocusInput = forwardRef((props, ref) => {
+  useEffect(() => {
+    if (ref?.current) {
+      ref.current.focus()
+    }
+  }, [])
+  
+  return <input ref={ref} {...props} />
+})
+```
+
+### Video Player Component
+
+```javascript VideoPlayer.jsx
+import { forwardRef } from '@unsetsoft/ryunixjs'
+
+const VideoPlayer = forwardRef((props, ref) => {
+  const { src, ...otherProps } = props
+  
+  return (
+    <video ref={ref} {...otherProps}>
+      <source src={src} type="video/mp4" />
+    </video>
+  )
+})
+
+// Usage in parent
+function App() {
+  const videoRef = useRef(null)
+  
+  const handlePlay = () => {
+    videoRef.current.play()
+  }
+  
+  const handlePause = () => {
+    videoRef.current.pause()
+  }
+  
+  return (
+    <div>
+      <VideoPlayer ref={videoRef} src="/video.mp4" />
+      <button onClick={handlePlay}>Play</button>
+      <button onClick={handlePause}>Pause</button>
+    </div>
+  )
+}
+```
+
+### Modal Component
+
+```javascript Modal.jsx
+import { forwardRef, useEffect } from '@unsetsoft/ryunixjs'
+
+const Modal = forwardRef((props, ref) => {
+  const { children, onClose } = props
+  
+  useEffect(() => {
+    // Focus modal when opened
+    if (ref?.current) {
+      ref.current.focus()
+    }
+    
+    // Trap focus inside modal
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
+  
+  return (
+    <div className="modal-overlay">
+      <div className="modal" ref={ref} tabIndex={-1}>
+        {children}
+      </div>
+    </div>
+  )
+})
+```
+
+### Combining with useImperativeHandle
+
+```javascript Counter.jsx
+import { forwardRef, useStore } from '@unsetsoft/ryunixjs'
+
+const Counter = forwardRef((props, ref) => {
+  const [count, setCount] = useStore(0)
+  
+  // Expose custom methods to parent
+  if (ref) {
+    ref.current = {
+      increment: () => setCount(count + 1),
+      decrement: () => setCount(count - 1),
+      reset: () => setCount(0),
+      getCount: () => count
+    }
+  }
+  
+  return <div>Count: {count}</div>
+})
+
+// Usage
+function App() {
+  const counterRef = useRef(null)
+  
+  return (
+    <div>
+      <Counter ref={counterRef} />
+      <button onClick={() => counterRef.current.increment()}>
+        Increment
+      </button>
+      <button onClick={() => counterRef.current.reset()}>
+        Reset
+      </button>
+    </div>
+  )
+}
+```
+
+## When to Use forwardRef
+
+<CardGroup cols={2}>
+  <Card title="Use When" icon="check" color="green">
+    - Creating reusable input components
+    - Building component libraries
+    - Need parent access to child DOM
+    - Implementing focus management
+  </Card>
+  <Card title="Avoid When" icon="xmark" color="red">
+    - Component doesn't expose DOM nodes
+    - Ref is only used internally
+    - Creating tight coupling between components
+    - Simple components without DOM access needs
+  </Card>
+</CardGroup>
+
+## Error Handling
+
+`forwardRef` validates that the render argument is a function:
+
+```javascript
+if (typeof render !== 'function') {
+  throw new Error('forwardRef requires a render function')
+}
+```
+
+Source: `forwardRef.js:13-15`
+
+## Debugging
+
+### Display Name
+
+```javascript
+const MyInput = forwardRef(function MyInput(props, ref) {
+  return <input ref={ref} {...props} />
+})
+
+console.log(MyInput.displayName)
+// Output: "ForwardRef(MyInput)"
+```
+
+### Checking if Component Uses forwardRef
+
+```javascript
+console.log(MyInput._isForwardRef)
+// Output: true
+```
+
+## See Also
+
+- [`useRef()`](/api/hooks/useRef) - Create ref objects
+- [Refs and the DOM](/core/rendering#refs) - Understanding refs in RyunixJS
+- [`createPortal()`](/api/utilities/createPortal) - Render outside parent hierarchy

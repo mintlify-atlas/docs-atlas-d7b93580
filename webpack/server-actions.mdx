@@ -1,0 +1,635 @@
+---
+title: Server Actions
+description: Execute backend functions from frontend components seamlessly
+icon: bolt
+---
+
+Server Actions are asynchronous functions that bridge the gap between frontend components and backend execution. By annotating a file with `// @server`, you can export functions that are callable from the client but execute on the Node.js server.
+
+## Overview
+
+Server Actions are powered by `ryunix-server-action-loader.mjs`, a custom Webpack loader built with Babel AST transformations.
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs`
+
+## How It Works
+
+<Steps>
+  <Step title="File Annotation">
+    Mark a file with `// @server` at the top
+  </Step>
+  
+  <Step title="AST Parsing">
+    Webpack loader parses the file to find all exported async functions
+  </Step>
+  
+  <Step title="Client Transformation">
+    For client builds, strips implementation and replaces with proxy
+  </Step>
+  
+  <Step title="Server Registration">
+    For server builds, appends registration logic to global dictionary
+  </Step>
+  
+  <Step title="Runtime Execution">
+    Client calls proxy → POST to `/_ryunix/action` → Server executes function
+  </Step>
+</Steps>
+
+## Basic Usage
+
+### Define Server Action
+
+Create a file with `// @server` directive:
+
+```javascript
+// @server
+// src/actions/user.js
+
+export async function getUser(id) {
+  // This code runs ONLY on the server
+  const db = await import('./db')
+  const user = await db.users.findById(id)
+  return user
+}
+
+export async function createUser(data) {
+  const db = await import('./db')
+  const user = await db.users.create(data)
+  return user
+}
+```
+
+### Call from Client Component
+
+```javascript
+// src/components/UserProfile.ryx
+import { getUser } from '../actions/user'
+
+export default function UserProfile() {
+  const [user, setUser] = Ryunix.useState(null)
+  
+  Ryunix.useEffect(() => {
+    // This looks like a normal function call,
+    // but actually makes a POST request to the server!
+    getUser(123).then(setUser)
+  }, [])
+  
+  if (!user) return <div>Loading...</div>
+  
+  return <div>Hello, {user.name}!</div>
+}
+```
+
+## Loader Transformation
+
+### Client Build (`target: web`)
+
+The loader transforms the exported functions:
+
+**Original:**
+```javascript
+// @server
+export async function getUser(id) {
+  const db = await import('./db')
+  return db.users.findById(id)
+}
+```
+
+**Transformed:**
+```javascript
+import { createActionProxy as __ryunixCreateActionProxy } from '@unsetsoft/ryunixjs';
+
+export const getUser = __ryunixCreateActionProxy("a1b2c3d4_getUser");
+```
+
+**What happens:**
+1. Implementation is stripped
+2. Function replaced with proxy from `@unsetsoft/ryunixjs`
+3. Proxy receives a hashed `actionId` (SHA-256 of file path + function name)
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:29-42`
+
+---
+
+### Server Build (`target: node`)
+
+The loader keeps the implementation and adds registration:
+
+**Original:**
+```javascript
+// @server
+export async function getUser(id) {
+  const db = await import('./db')
+  return db.users.findById(id)
+}
+```
+
+**Transformed:**
+```javascript
+export async function getUser(id) {
+  const db = await import('./db')
+  return db.users.findById(id)
+}
+
+// Ryunix Server Actions Registration
+if (typeof globalThis.__RYUNIX_SERVER_ACTIONS__ === 'undefined') {
+  globalThis.__RYUNIX_SERVER_ACTIONS__ = {};
+}
+globalThis.__RYUNIX_SERVER_ACTIONS__['a1b2c3d4_getUser'] = getUser;
+```
+
+**What happens:**
+1. Implementation is preserved
+2. Registration code appended at bottom
+3. Function stored in global dictionary with matching `actionId`
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:71-80`
+
+## Runtime Execution
+
+### Client-Side Proxy
+
+When called on the client:
+
+```javascript
+const user = await getUser(123)
+```
+
+**The proxy:**
+1. Serializes arguments: `args = [123]`
+2. Makes POST request to `/_ryunix/action`
+3. Sends payload: `{ actionId: "a1b2c3d4_getUser", args: [123] }`
+4. Receives JSON response
+5. Returns deserialized result
+
+---
+
+### Server-Side Handler
+
+The server intercepts the request:
+
+**Development (DevServer):**
+
+```javascript
+devServer.app.use(async (req, res, next) => {
+  if (req.method === 'POST' && req.url === '/_ryunix/action') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      const { actionId, args } = JSON.parse(body);
+      const action = global.__RYUNIX_SERVER_ACTIONS__?.[actionId];
+      
+      if (!action) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: `Server Action ${actionId} not found` }));
+      }
+      
+      const result = await action(...args);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    });
+    return;
+  }
+  next();
+});
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:401-429`
+
+**Production:**
+
+Similar handler in `bin/prod.server.mjs` using native Node.js `http` module.
+
+## Advanced Patterns
+
+### Multiple Actions
+
+```javascript
+// @server
+// actions/products.js
+
+export async function getProducts() {
+  return db.products.findAll()
+}
+
+export async function getProduct(id) {
+  return db.products.findById(id)
+}
+
+export async function createProduct(data) {
+  return db.products.create(data)
+}
+
+export async function updateProduct(id, data) {
+  return db.products.update(id, data)
+}
+
+export async function deleteProduct(id) {
+  return db.products.delete(id)
+}
+```
+
+All functions are automatically registered with unique IDs:
+- `hash_getProducts`
+- `hash_getProduct`
+- `hash_createProduct`
+- `hash_updateProduct`
+- `hash_deleteProduct`
+
+---
+
+### Arrow Functions
+
+Server Actions support arrow function syntax:
+
+```javascript
+// @server
+export const fetchData = async (params) => {
+  const response = await fetch(`https://api.example.com?${params}`)
+  return response.json()
+}
+```
+
+**Detection logic:**
+
+```javascript
+if ((t.isArrowFunctionExpression(decl.init) || t.isFunctionExpression(decl.init)) && decl.init.async) {
+  const name = decl.id.name;
+  actionNames.push(name);
+  // ... transform
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-server-action-loader.mjs:45-60`
+
+---
+
+### Error Handling
+
+```javascript
+// @server
+export async function dangerousAction(id) {
+  if (!id) {
+    throw new Error('ID is required')
+  }
+  
+  const item = await db.items.findById(id)
+  
+  if (!item) {
+    throw new Error('Item not found')
+  }
+  
+  return item
+}
+```
+
+**Client handling:**
+
+```javascript
+try {
+  const item = await dangerousAction(null)
+} catch (error) {
+  console.error('Server action failed:', error.message)
+}
+```
+
+**Server response (error):**
+
+```javascript
+res.writeHead(500, { 'Content-Type': 'application/json' });
+res.end(JSON.stringify({ error: err.message }));
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:418-420`
+
+---
+
+### Database Access
+
+```javascript
+// @server
+// actions/posts.js
+import { db } from '../lib/db'
+
+export async function getPosts(limit = 10) {
+  const posts = await db.posts.findMany({
+    take: limit,
+    orderBy: { createdAt: 'desc' }
+  })
+  return posts
+}
+
+export async function getPostBySlug(slug) {
+  const post = await db.posts.findUnique({
+    where: { slug }
+  })
+  
+  if (!post) {
+    throw new Error('Post not found')
+  }
+  
+  return post
+}
+```
+
+**Usage:**
+
+```javascript
+import { getPosts, getPostBySlug } from './actions/posts'
+
+export default function BlogPage() {
+  const [posts, setPosts] = Ryunix.useState([])
+  
+  Ryunix.useEffect(() => {
+    getPosts(20).then(setPosts)
+  }, [])
+  
+  return (
+    <div>
+      {posts.map(post => (
+        <article key={post.id}>
+          <h2>{post.title}</h2>
+        </article>
+      ))}
+    </div>
+  )
+}
+```
+
+---
+
+### Authentication
+
+```javascript
+// @server
+// actions/auth.js
+import { verify } from '../lib/jwt'
+import { db } from '../lib/db'
+
+export async function getCurrentUser(token) {
+  try {
+    const decoded = verify(token)
+    const user = await db.users.findById(decoded.userId)
+    return user
+  } catch (error) {
+    throw new Error('Unauthorized')
+  }
+}
+
+export async function login(email, password) {
+  const user = await db.users.findByEmail(email)
+  
+  if (!user || !await user.verifyPassword(password)) {
+    throw new Error('Invalid credentials')
+  }
+  
+  const token = sign({ userId: user.id })
+  return { user, token }
+}
+```
+
+## Security Considerations
+
+<Warning>
+Server Actions run with **full server privileges**. Always validate inputs and authenticate users.
+</Warning>
+
+### Input Validation
+
+```javascript
+// @server
+import { z } from 'zod'
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  age: z.number().min(0).max(150)
+})
+
+export async function createUser(data) {
+  // Validate input
+  const validated = createUserSchema.parse(data)
+  
+  // Proceed with safe data
+  return db.users.create(validated)
+}
+```
+
+---
+
+### Authorization
+
+```javascript
+// @server
+export async function deletePost(postId, userId) {
+  const post = await db.posts.findById(postId)
+  
+  // Check ownership
+  if (post.authorId !== userId) {
+    throw new Error('Unauthorized: You do not own this post')
+  }
+  
+  return db.posts.delete(postId)
+}
+```
+
+---
+
+### Rate Limiting
+
+```javascript
+// @server
+import rateLimit from '../lib/rate-limit'
+
+export async function sendEmail(to, subject, body) {
+  // Check rate limit
+  await rateLimit.check(to, { max: 5, window: '1h' })
+  
+  // Send email
+  await emailService.send({ to, subject, body })
+  return { success: true }
+}
+```
+
+## Debugging
+
+Enable debug mode to see Server Action registration:
+
+```javascript
+// ryunix.config.js
+export default {
+  debug: true
+}
+```
+
+**Console output:**
+
+```bash
+[RSC Loader Execution] Tagging getUser with ID a1b2c3d4
+```
+
+**Source:** `/packages/ryunix-presets/webpack/loaders/ryunix-rsc-loader.mjs:27-29`
+
+## Comparison to API Routes
+
+| Feature | Server Actions | API Routes |
+|---------|---------------|------------|
+| **File location** | Anywhere | `app/api/` only |
+| **Syntax** | Function call | `fetch('/api/...')` |
+| **Type safety** | Native | Manual |
+| **Boilerplate** | Minimal | Medium |
+| **Use case** | Component-level data | RESTful APIs |
+
+**When to use Server Actions:**
+- Component-specific data fetching
+- Form submissions
+- Mutations triggered by user interaction
+
+**When to use API Routes:**
+- Public APIs
+- Webhooks
+- Third-party integrations
+- Complex REST/GraphQL endpoints
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Validate Inputs" icon="shield-check">
+    Always validate and sanitize user inputs before processing
+  </Card>
+  
+  <Card title="Handle Errors" icon="triangle-exclamation">
+    Use try/catch and throw descriptive errors
+  </Card>
+  
+  <Card title="Keep Logic Thin" icon="minimize">
+    Delegate complex operations to separate modules
+  </Card>
+  
+  <Card title="Authenticate Requests" icon="lock">
+    Verify user identity for sensitive operations
+  </Card>
+</CardGroup>
+
+## Limitations
+
+<Warning>
+**Current limitations of Server Actions:**
+
+1. **Serialization**: Arguments and return values must be JSON-serializable
+2. **No streaming**: Results are returned as complete JSON payloads
+3. **No file uploads**: Use API Routes for multipart form data
+4. **Client-side only**: Cannot be called from server components directly
+</Warning>
+
+## Example: Full CRUD
+
+```javascript
+// @server
+// actions/todos.js
+import { db } from '../lib/db'
+
+export async function getTodos(userId) {
+  return db.todos.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' }
+  })
+}
+
+export async function createTodo(userId, text) {
+  if (!text || text.trim().length === 0) {
+    throw new Error('Todo text is required')
+  }
+  
+  return db.todos.create({
+    userId,
+    text: text.trim(),
+    completed: false
+  })
+}
+
+export async function toggleTodo(todoId, userId) {
+  const todo = await db.todos.findById(todoId)
+  
+  if (todo.userId !== userId) {
+    throw new Error('Unauthorized')
+  }
+  
+  return db.todos.update(todoId, {
+    completed: !todo.completed
+  })
+}
+
+export async function deleteTodo(todoId, userId) {
+  const todo = await db.todos.findById(todoId)
+  
+  if (todo.userId !== userId) {
+    throw new Error('Unauthorized')
+  }
+  
+  return db.todos.delete(todoId)
+}
+```
+
+**Component:**
+
+```javascript
+import { getTodos, createTodo, toggleTodo, deleteTodo } from './actions/todos'
+
+export default function TodoList({ userId }) {
+  const [todos, setTodos] = Ryunix.useState([])
+  const [input, setInput] = Ryunix.useState('')
+  
+  // Load todos
+  Ryunix.useEffect(() => {
+    getTodos(userId).then(setTodos)
+  }, [userId])
+  
+  // Create todo
+  const handleCreate = async () => {
+    const newTodo = await createTodo(userId, input)
+    setTodos([newTodo, ...todos])
+    setInput('')
+  }
+  
+  // Toggle todo
+  const handleToggle = async (id) => {
+    const updated = await toggleTodo(id, userId)
+    setTodos(todos.map(t => t.id === id ? updated : t))
+  }
+  
+  // Delete todo
+  const handleDelete = async (id) => {
+    await deleteTodo(id, userId)
+    setTodos(todos.filter(t => t.id !== id))
+  }
+  
+  return (
+    <div>
+      <input 
+        value={input} 
+        onChange={(e) => setInput(e.target.value)}
+        onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
+      />
+      <button onClick={handleCreate}>Add</button>
+      
+      <ul>
+        {todos.map(todo => (
+          <li key={todo.id}>
+            <input 
+              type="checkbox" 
+              checked={todo.completed}
+              onChange={() => handleToggle(todo.id)}
+            />
+            <span style={{ textDecoration: todo.completed ? 'line-through' : 'none' }}>
+              {todo.text}
+            </span>
+            <button onClick={() => handleDelete(todo.id)}>Delete</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```

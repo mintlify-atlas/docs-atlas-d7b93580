@@ -1,0 +1,408 @@
+---
+title: 'Fragment'
+description: 'Component for grouping children without adding extra DOM nodes'
+---
+
+## Overview
+
+`Fragment` is a component that lets you group multiple children without adding extra nodes to the DOM. It's useful when you need to return multiple elements from a component but don't want to wrap them in a container element.
+
+Fragments are rendered as a special type that the reconciler handles without creating DOM elements.
+
+## Usage
+
+### Basic fragment
+
+```jsx
+import { Fragment } from 'ryunixjs'
+
+function MyComponent() {
+  return (
+    <Fragment>
+      <h1>Title</h1>
+      <p>Paragraph</p>
+    </Fragment>
+  )
+}
+```
+
+### Returning multiple elements
+
+```jsx
+import { Fragment } from 'ryunixjs'
+
+function TableRow({ data }) {
+  return (
+    <Fragment>
+      <td>{data.name}</td>
+      <td>{data.value}</td>
+      <td>{data.status}</td>
+    </Fragment>
+  )
+}
+
+function Table({ rows }) {
+  return (
+    <table>
+      <tbody>
+        <tr>
+          {rows.map(row => <TableRow key={row.id} data={row} />)}
+        </tr>
+      </tbody>
+    </table>
+  )
+}
+```
+
+### Short syntax
+
+RyunixJS supports the JSX short syntax for fragments:
+
+```jsx
+function MyComponent() {
+  return (
+    <>
+      <h1>Title</h1>
+      <p>Paragraph</p>
+    </>
+  )
+}
+```
+
+This is equivalent to using `<Fragment>` but more concise.
+
+### With conditional rendering
+
+```jsx
+import { Fragment } from 'ryunixjs'
+
+function UserInfo({ user, showDetails }) {
+  return (
+    <Fragment>
+      <h2>{user.name}</h2>
+      {showDetails && (
+        <Fragment>
+          <p>Email: {user.email}</p>
+          <p>Phone: {user.phone}</p>
+        </Fragment>
+      )}
+    </Fragment>
+  )
+}
+```
+
+### Mapping with fragments
+
+```jsx
+import { Fragment } from 'ryunixjs'
+
+function List({ items }) {
+  return (
+    <ul>
+      {items.map(item => (
+        <Fragment key={item.id}>
+          <li>{item.title}</li>
+          <li className="description">{item.description}</li>
+        </Fragment>
+      ))}
+    </ul>
+  )
+}
+```
+
+<Note>
+When using fragments in lists, you can pass a `key` prop directly to the Fragment component for proper reconciliation.
+</Note>
+
+## Behavior
+
+### DOM rendering
+
+Fragments do not create DOM elements. The children are rendered directly as siblings:
+
+```jsx
+// This component
+function App() {
+  return (
+    <div>
+      <Fragment>
+        <p>First</p>
+        <p>Second</p>
+      </Fragment>
+    </div>
+  )
+}
+
+// Renders as
+<div>
+  <p>First</p>
+  <p>Second</p>
+</div>
+
+// NOT as
+<div>
+  <fragment>  {/* No wrapper element */}
+    <p>First</p>
+    <p>Second</p>
+  </fragment>
+</div>
+```
+
+### Internal implementation
+
+Fragment is implemented as a function that wraps children in a special Ryunix type:
+
+```js
+const Fragment = (props) => {
+  const children = Array.isArray(props.children)
+    ? props.children
+    : [props.children]
+  return createElement(RYUNIX_TYPES.RYUNIX_FRAGMENT, {}, ...children)
+}
+```
+
+Source: `packages/core/src/lib/createElement.js:87-92`
+
+### Children handling
+
+Fragment normalizes children by:
+1. Converting single child to array if needed
+2. Passing children to `createElement` with the `RYUNIX_FRAGMENT` type
+3. The reconciler renders children without creating a wrapper node
+
+## Common patterns
+
+### Avoiding wrapper divs
+
+```jsx
+// Without Fragment - adds unnecessary div
+function BadExample() {
+  return (
+    <div>
+      <Header />
+      <Main />
+      <Footer />
+    </div>
+  )
+}
+
+// With Fragment - no extra element
+function GoodExample() {
+  return (
+    <>
+      <Header />
+      <Main />
+      <Footer />
+    </>
+  )
+}
+```
+
+### Complex conditional rendering
+
+```jsx
+import { Fragment } from 'ryunixjs'
+
+function Article({ article, showMeta }) {
+  return (
+    <article>
+      {showMeta && (
+        <Fragment>
+          <div className="author">By {article.author}</div>
+          <div className="date">{article.date}</div>
+          <div className="tags">{article.tags.join(', ')}</div>
+        </Fragment>
+      )}
+      <h1>{article.title}</h1>
+      <div className="content">{article.content}</div>
+    </article>
+  )
+}
+```
+
+### Layout components
+
+```jsx
+import { Fragment } from 'ryunixjs'
+
+function GridRow({ children }) {
+  return <Fragment>{children}</Fragment>
+}
+
+function Grid({ items }) {
+  return (
+    <div className="grid">
+      {items.map(item => (
+        <GridRow key={item.id}>
+          <div className="cell">{item.name}</div>
+          <div className="cell">{item.value}</div>
+        </GridRow>
+      ))}
+    </div>
+  )
+}
+```
+
+### Portals and fragments
+
+```jsx
+import { Fragment, createPortal } from 'ryunixjs'
+
+function Modal({ children, isOpen }) {
+  if (!isOpen) return null
+  
+  return createPortal(
+    <Fragment>
+      <div className="modal-backdrop" />
+      <div className="modal-content">
+        {children}
+      </div>
+    </Fragment>,
+    document.body
+  )
+}
+```
+
+## Best practices
+
+### Use short syntax when possible
+
+```jsx
+// Preferred
+function Component() {
+  return (
+    <>
+      <Child1 />
+      <Child2 />
+    </>
+  )
+}
+
+// Also fine, but more verbose
+import { Fragment } from 'ryunixjs'
+
+function Component() {
+  return (
+    <Fragment>
+      <Child1 />
+      <Child2 />
+    </Fragment>
+  )
+}
+```
+
+### Add keys when mapping
+
+```jsx
+// Good - Fragment has key
+items.map(item => (
+  <Fragment key={item.id}>
+    <div>{item.title}</div>
+    <div>{item.description}</div>
+  </Fragment>
+))
+
+// Bad - no key, React will warn
+items.map(item => (
+  <Fragment>
+    <div>{item.title}</div>
+    <div>{item.description}</div>
+  </Fragment>
+))
+```
+
+### Don't use fragments unnecessarily
+
+```jsx
+// Unnecessary - single child doesn't need Fragment
+function Component() {
+  return (
+    <Fragment>
+      <div>Single child</div>
+    </Fragment>
+  )
+}
+
+// Better
+function Component() {
+  return <div>Single child</div>
+}
+```
+
+## Performance
+
+### Zero overhead
+
+Fragments have no performance cost:
+- No extra DOM nodes created
+- No additional reconciliation work
+- No memory overhead
+- No layout/paint impact
+
+### Reconciliation benefits
+
+Using fragments can improve reconciliation performance:
+- Fewer DOM nodes to compare
+- Simpler component tree structure
+- More efficient updates
+
+## Technical details
+
+### Ryunix type
+
+Fragments are identified by a special type:
+
+```js
+RYUNIX_TYPES.RYUNIX_FRAGMENT
+```
+
+The reconciler recognizes this type and handles it as a passthrough during rendering.
+
+### Props handling
+
+Fragments accept a single prop:
+
+<ParamField path="children" type="ReactNode">
+  The child elements to group together. Can be a single element or an array of elements.
+</ParamField>
+
+<ParamField path="key" type="string | number">
+  Optional key for fragments in lists. Required when mapping over arrays to return fragments.
+</ParamField>
+
+All other props are ignored.
+
+### Export location
+
+Fragment is exported from the main RyunixJS package:
+
+```js
+import { Fragment } from 'ryunixjs'
+
+// Or use JSX short syntax (configured in your JSX transpiler)
+<>...</>
+```
+
+Source: `packages/core/src/lib/createElement.js:120-126`
+
+## Comparison with wrapper elements
+
+| Aspect | Fragment | Wrapper div |
+|--------|----------|-------------|
+| DOM nodes | None | Creates `<div>` |
+| CSS styling | Not applicable | Can be styled |
+| Layout impact | None | Affects layout |
+| Semantic HTML | Preserves structure | May break semantics |
+| Performance | Zero overhead | Additional DOM node |
+| Event handling | Passes through | Can attach handlers |
+
+Use fragments when:
+- You need to group elements without affecting the DOM
+- You want to preserve semantic HTML structure
+- You're returning multiple elements from a component
+- You want to avoid CSS layout issues
+
+Use wrapper elements when:
+- You need to apply styles to the group
+- You need to attach event handlers to the container
+- You need a specific semantic element

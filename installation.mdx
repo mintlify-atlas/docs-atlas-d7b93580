@@ -1,0 +1,166 @@
+---
+title: Installation
+description: Install RyunixJS and set up your development environment with npm, yarn, or pnpm.
+---
+
+## System Requirements
+
+Before installing RyunixJS, ensure your system meets the following requirements:
+
+- **Node.js**: Version 20, 22, or 24 (latest LTS recommended)
+- **Package Manager**: npm, yarn, or pnpm
+
+<Warning>
+RyunixJS requires Node.js version 20 or higher. Older versions are not supported.
+</Warning>
+
+## Quick Installation
+
+The fastest way to get started with RyunixJS is using the Create Ryunix App (CRA) tool. This CLI will scaffold a new project with all the necessary configuration.
+
+<CodeGroup>
+```bash npm
+npx @unsetsoft/cra@latest my-ryunix-app
+```
+
+```bash yarn
+yarn create @unsetsoft/cra my-ryunix-app
+```
+
+```bash pnpm
+pnpm create @unsetsoft/cra my-ryunix-app
+```
+</CodeGroup>
+
+Replace `my-ryunix-app` with your desired project name.
+
+## Interactive Setup
+
+When you run the Create Ryunix App command without specifying a project name, you'll be prompted to configure your project interactively:
+
+<Steps>
+  <Step title="Project Name">
+    Enter your project name when prompted. The default is `my-ryunix-app`.
+  </Step>
+  
+  <Step title="Release Channel">
+    Choose between:
+    - **Latest**: Stable release channel (recommended for production)
+    - **Canary**: Cutting-edge features (unstable, for testing only)
+  </Step>
+  
+  <Step title="Tailwind CSS">
+    Optionally initialize your project with Tailwind CSS configuration for utility-first styling.
+  </Step>
+  
+  <Step title="ESLint">
+    Optionally set up ESLint for code quality and consistency checks.
+  </Step>
+  
+  <Step title="VS Code Settings">
+    Optionally add VS Code workspace settings for the Ryunix extension.
+  </Step>
+</Steps>
+
+## Command-Line Options
+
+You can skip the interactive prompts by passing options directly:
+
+```bash
+npx @unsetsoft/cra@latest my-app --latest --tailwind --eslint --vscode
+```
+
+### Available Options
+
+| Option | Description |
+|--------|-------------|
+| `--latest` | Use the Latest (stable) channel for dependencies (default) |
+| `--canary` | Use the Canary channel for cutting-edge features |
+| `--tailwind` | Initialize with Tailwind CSS configuration |
+| `--eslint` | Initialize with ESLint configuration |
+| `--vscode` | Add VS Code settings for Ryunix extension |
+| `-v, --version` | Display the version of Create Ryunix App |
+| `-h, --help` | Display help information |
+
+## Manual Installation
+
+If you prefer to set up RyunixJS manually in an existing project:
+
+<CodeGroup>
+```bash npm
+npm install @unsetsoft/ryunixjs
+```
+
+```bash yarn
+yarn add @unsetsoft/ryunixjs
+```
+
+```bash pnpm
+pnpm add @unsetsoft/ryunixjs
+```
+</CodeGroup>
+
+### Package Details
+
+- **Package Name**: `@unsetsoft/ryunixjs`
+- **Current Version**: 1.2.4-canary.17 (Canary channel)
+- **License**: MIT
+- **Module Types**: Both ESM (`import`) and UMD (`require`) supported
+
+<Note>
+The core RyunixJS package is framework-only. For a complete development environment with build tools and CLI, use Create Ryunix App.
+</Note>
+
+## Release Channels
+
+RyunixJS offers two release channels:
+
+### Latest Channel (Stable)
+
+The stable release channel receives thoroughly tested updates and is recommended for production applications.
+
+```bash
+npx @unsetsoft/cra@latest my-app --latest
+```
+
+### Canary Channel (Unstable)
+
+The canary channel includes cutting-edge features and early bug fixes. Use this for testing and experimentation, not for production.
+
+```bash
+npx @unsetsoft/cra@latest my-app --canary
+```
+
+<Warning>
+Canary builds may contain breaking changes and unstable features. Always use the Latest channel for production applications.
+</Warning>
+
+## Verifying Installation
+
+After creating your project, navigate to the project directory:
+
+```bash
+cd my-ryunix-app
+```
+
+You should see a project structure with:
+- `app/` - Your application code
+- `package.json` - Project configuration and scripts
+- `ryunix.config.js` - Ryunix framework configuration
+
+Check that your `package.json` includes scripts for development:
+
+```json
+{
+  "scripts": {
+    "dev": "ryunix dev",
+    "build": "ryunix build",
+    "start": "ryunix start",
+    "lint": "ryunix lint"
+  }
+}
+```
+
+## Next Steps
+
+Now that you have RyunixJS installed, head over to the [Quickstart](/quickstart) guide to build your first application.

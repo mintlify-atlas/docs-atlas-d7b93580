@@ -1,0 +1,398 @@
+---
+title: 'useRouter'
+description: 'Access routing context for navigation and route information'
+icon: 'route'
+---
+
+## Overview
+
+`useRouter` provides access to the router context in RyunixJS applications. It gives you information about the current route, navigation functions, and route parameters.
+
+## Signature
+
+```javascript
+const router = useRouter()
+```
+
+## Return Value
+
+Returns an object with the following properties:
+
+<ParamField path="location" type="string">
+  The current pathname (e.g., `/users/123`)
+</ParamField>
+
+<ParamField path="params" type="object">
+  URL parameters extracted from dynamic route segments (e.g., `{ id: '123' }`)
+</ParamField>
+
+<ParamField path="query" type="object">
+  Query string parameters (e.g., `{ search: 'hello', page: '2' }`)
+</ParamField>
+
+<ParamField path="navigate" type="Function">
+  Function to programmatically navigate to a different route.
+  
+  Signature: `(path: string) => void`
+</ParamField>
+
+<ParamField path="route" type="object">
+  The current route configuration object from the routes array
+</ParamField>
+
+## Setup
+
+Before using `useRouter`, wrap your app with `RouterProvider`:
+
+```javascript
+import { RouterProvider } from 'ryunix'
+
+const routes = [
+  { path: '/', component: Home },
+  { path: '/about', component: About },
+  { path: '/users/:id', component: UserProfile }
+]
+
+function App() {
+  return (
+    <RouterProvider routes={routes}>
+      <YourApp />
+    </RouterProvider>
+  )
+}
+```
+
+## Usage
+
+### Basic Navigation
+
+```javascript
+import { useRouter } from 'ryunix'
+
+function Navigation() {
+  const { location, navigate } = useRouter()
+
+  return (
+    <nav>
+      <button
+        onClick={() => navigate('/')}
+        className={location === '/' ? 'active' : ''}
+      >
+        Home
+      </button>
+      <button
+        onClick={() => navigate('/about')}
+        className={location === '/about' ? 'active' : ''}
+      >
+        About
+      </button>
+      <button onClick={() => navigate('/users/123')}>
+        User Profile
+      </button>
+    </nav>
+  )
+}
+```
+
+### Accessing Route Params
+
+```javascript
+// Route: /users/:id
+function UserProfile() {
+  const { params } = useRouter()
+  const userId = params.id
+
+  const [user, setUser] = useStore(null)
+
+  useEffect(() => {
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(data => setUser(data))
+  }, [userId])
+
+  return (
+    <div>
+      <h1>User {userId}</h1>
+      {user && <UserDetails user={user} />}
+    </div>
+  )
+}
+```
+
+### Query Parameters
+
+```javascript
+// URL: /search?q=hello&page=2
+function SearchPage() {
+  const { query, navigate } = useRouter()
+  
+  const searchQuery = query.q || ''
+  const page = parseInt(query.page || '1')
+
+  const updateSearch = (newQuery) => {
+    navigate(`/search?q=${newQuery}&page=1`)
+  }
+
+  const nextPage = () => {
+    navigate(`/search?q=${searchQuery}&page=${page + 1}`)
+  }
+
+  return (
+    <div>
+      <input
+        value={searchQuery}
+        onChange={(e) => updateSearch(e.target.value)}
+      />
+      <SearchResults query={searchQuery} page={page} />
+      <button onClick={nextPage}>Next Page</button>
+    </div>
+  )
+}
+```
+
+### Programmatic Navigation
+
+```javascript
+function LoginForm() {
+  const { navigate } = useRouter()
+  const [credentials, setCredentials] = useStore({ email: '', password: '' })
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    
+    const success = await login(credentials)
+    
+    if (success) {
+      // Navigate to dashboard after login
+      navigate('/dashboard')
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="email"
+        value={credentials.email}
+        onChange={(e) => setCredentials(prev => ({
+          ...prev,
+          email: e.target.value
+        }))}
+      />
+      <input
+        type="password"
+        value={credentials.password}
+        onChange={(e) => setCredentials(prev => ({
+          ...prev,
+          password: e.target.value
+        }))}
+      />
+      <button type="submit">Login</button>
+    </form>
+  )
+}
+```
+
+### Nested Routes
+
+```javascript
+const routes = [
+  {
+    path: '/dashboard',
+    component: Dashboard,
+    subRoutes: [
+      { path: '/dashboard/profile', component: Profile },
+      { path: '/dashboard/settings', component: Settings }
+    ]
+  }
+]
+
+function Dashboard() {
+  const { location, navigate } = useRouter()
+
+  return (
+    <div>
+      <aside>
+        <button onClick={() => navigate('/dashboard/profile')}>
+          Profile
+        </button>
+        <button onClick={() => navigate('/dashboard/settings')}>
+          Settings
+        </button>
+      </aside>
+      <main>
+        {/* Child routes render here */}
+      </main>
+    </div>
+  )
+}
+```
+
+### Catch-All Routes
+
+```javascript
+// Route: /blog/:...slug
+function BlogPost() {
+  const { params } = useRouter()
+  
+  // params.slug will be an array for catch-all routes
+  // /blog/2024/01/15/my-post → ['2024', '01', '15', 'my-post']
+  const slug = params.slug
+  const fullPath = Array.isArray(slug) ? slug.join('/') : slug
+
+  return (
+    <div>
+      <h1>Blog Post: {fullPath}</h1>
+    </div>
+  )
+}
+```
+
+### Protected Routes
+
+```javascript
+function ProtectedPage() {
+  const { navigate } = useRouter()
+  const { user } = useAuth()
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login')
+    }
+  }, [user])
+
+  if (!user) return null
+
+  return <div>Protected Content</div>
+}
+```
+
+### Active Link Detection
+
+```javascript
+function NavLink({ to, children }) {
+  const { location, navigate } = useRouter()
+  const isActive = location === to
+
+  return (
+    <a
+      href={to}
+      onClick={(e) => {
+        e.preventDefault()
+        navigate(to)
+      }}
+      className={isActive ? 'active' : ''}
+    >
+      {children}
+    </a>
+  )
+}
+```
+
+## Route Patterns
+
+### Dynamic Segments
+
+```javascript
+const routes = [
+  { path: '/users/:id', component: UserProfile },
+  { path: '/posts/:id', component: PostDetail },
+  { path: '/categories/:category/items/:itemId', component: Item }
+]
+
+// Access params
+const { params } = useRouter()
+params.id
+params.category
+params.itemId
+```
+
+### Catch-All Segments
+
+```javascript
+const routes = [
+  { path: '/files/:...path', component: FileExplorer }
+]
+
+// /files/docs/2024/report.pdf
+const { params } = useRouter()
+params.path // ['docs', '2024', 'report.pdf']
+```
+
+### Not Found Route
+
+```javascript
+const routes = [
+  { path: '/', component: Home },
+  { path: '/about', component: About },
+  { path: '*', NotFound: NotFoundPage } // Catch-all for 404
+]
+```
+
+## Multi-Page Application Mode
+
+RyunixJS can detect MPA mode:
+
+```javascript
+function Component() {
+  const { navigate } = useRouter()
+
+  const handleClick = () => {
+    // If window.__RYUNIX_MPA__ is true, this does a full page reload
+    // Otherwise, it's a client-side navigation
+    navigate('/other-page')
+  }
+
+  return <button onClick={handleClick}>Go</button>
+}
+```
+
+## Implementation Details
+
+The router uses context internally:
+
+```javascript
+const RouterContext = createContext('ryunix.navigation', {
+  location: '/',
+  params: {},
+  query: {},
+  navigate: (path) => {},
+  route: null,
+})
+
+const useRouter = () => {
+  return RouterContext.useContext('ryunix.navigation')
+}
+```
+
+## Browser Events
+
+`RouterProvider` listens to:
+- `popstate` - Back/forward navigation
+- `hashchange` - Hash changes
+
+```javascript
+useEffect(() => {
+  const update = () => setLocation(window.location.pathname)
+  window.addEventListener('popstate', update)
+  window.addEventListener('hashchange', update)
+  return () => {
+    window.removeEventListener('popstate', update)
+    window.removeEventListener('hashchange', update)
+  }
+}, [])
+```
+
+## Best Practices
+
+1. **Use Link components** - Prefer `<Link>` or `<NavLink>` over `navigate()` for better UX
+2. **Handle loading states** - Show loading indicators during route transitions
+3. **Validate params** - Check that route params exist and are valid
+4. **Use query objects** - Parse query strings into structured data
+5. **Cleanup effects** - Cancel pending requests when route changes
+
+## Related Hooks and Components
+
+- [usePathname](/api/hooks/useRouter) - Get current pathname without query/hash
+- [useSearchParams](/api/hooks/useRouter) - URLSearchParams interface for queries
+- [Link](/webpack/routing) - Declarative navigation component
+- [NavLink](/webpack/routing) - Link with active state detection

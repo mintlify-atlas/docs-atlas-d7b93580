@@ -1,0 +1,596 @@
+---
+title: SSR & SSG
+description: Server-Side Rendering and Static Site Generation
+icon: globe
+---
+
+Ryunix provides first-class support for both Server-Side Rendering (SSR) and Static Site Generation (SSG) through its dual compiler architecture.
+
+## Server-Side Rendering (SSR)
+
+SSR renders pages on the server at request time, sending fully-formed HTML to the browser.
+
+### Enable SSR
+
+Set `ssr: true` in `ryunix.config.js`:
+
+```javascript
+export default {
+  ssr: true
+}
+```
+
+**What this enables:**
+- Dual compiler mode (client + server builds)
+- Server-side rendering during development and production
+- Automatic hydration on the client
+- SEO-friendly HTML output
+
+### How SSR Works
+
+<Steps>
+  <Step title="Request Intercepted">
+    Dev server or production server intercepts `GET` requests for HTML
+  </Step>
+  
+  <Step title="Server Bundle Loaded">
+    Loads `app-router-server.bundle.mjs` (Node.js bundle)
+  </Step>
+  
+  <Step title="Component Rendered">
+    Executes `Ryunix.renderToReadableStream()` or `renderToString()`
+  </Step>
+  
+  <Step title="HTML Injected">
+    Injects rendered HTML into `index.html` template with CSS links
+  </Step>
+  
+  <Step title="Response Sent">
+    Sends complete HTML to browser
+  </Step>
+  
+  <Step title="Client Hydration">
+    Client bundle loads and hydrates the server-rendered HTML
+  </Step>
+</Steps>
+
+### Development SSR
+
+The dev server uses `ssrDevHandler.mjs` to provide SSR:
+
+**Features:**
+- Intercepts requests for `text/html`
+- Accesses virtualized `index.html` from Webpack memory
+- Loads `app-router-server.bundle.mjs`
+- Mocks global objects (`window.location`, `document`) if needed
+- Injects development CSS `<link>` tags
+- Eliminates First Paint Blank Screens
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:443-453`
+
+**Middleware:**
+
+```javascript
+devServer.app.use(async (req, res, next) => {
+  try {
+    if (config.ssr) {
+      const handled = await renderDevRoute(req, res, devServer, dir, config)
+      if (handled) return
+    }
+  } catch (err) {
+    console.error('[Ryunix Dev SSR]', err)
+  }
+  next()
+})
+```
+
+### Production SSR
+
+The production server (`bin/prod.server.mjs`) provides optimized SSR:
+
+**Features:**
+- **In-Memory Caching:** 50MB LRU cache for static assets
+- **Dynamic Compression:** Brotli (quality 6) or Gzip on-the-fly
+- **Streamed Media:** Full HTTP `206 Partial Content` and `Range` support
+- **ETag Validation:** MD5 hashes for `304 Not Modified` responses
+- **API Routing:** Pipes `/api/*` through `handleApiRequest`
+- **SPA Fallback:** Falls back to `index.html` for client-side routing
+
+**Source:** See CLI documentation for production server details
+
+### Server Components
+
+Server Components run only on the server and can perform async operations:
+
+```javascript
+// app/users/page.ryx
+export default async function UsersPage() {
+  // This runs on the server!
+  const users = await db.users.findMany()
+  
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+**Benefits:**
+- Direct database access
+- No API endpoints needed
+- Reduced client bundle size
+- Automatic serialization
+
+**Auto-Detection:**
+
+The `AppRouterPlugin` detects Server Components:
+- Async default exports
+- No client-side hooks (`useEffect`, `useState`, etc.)
+
+**Source:** See routing documentation for component detection
+
+---
+
+## Static Site Generation (SSG)
+
+SSG pre-renders pages at build time, generating static HTML files.
+
+### Enable SSG
+
+SSG is automatically triggered when `production: true` during build:
+
+```bash
+RYUNIX_MODE=production ryunix build
+```
+
+**Or explicitly in config:**
+
+```javascript
+export default {
+  webpack: {
+    production: true
+  }
+}
+```
+
+### RyunixRoutesPlugin
+
+Handles Static Site Generation during production builds.
+
+**Source:** `/packages/ryunix-presets/webpack/utils/ssgPlugin.mjs`
+
+**Configuration:**
+
+```javascript
+new RyunixRoutesPlugin({
+  routesPath: resolveApp(dir, 'src/pages/routes.ryx'),
+  outputPath: resolveApp(dir, '.ryunix/cache/ssg/routes.json'),
+  debug: config.debug
+})
+```
+
+### How SSG Works
+
+<Steps>
+  <Step title="Extraction">
+    Reads compiled `app-router-server.bundle.mjs` and legacy `routes.ryx`
+  </Step>
+  
+  <Step title="Frontmatter Parsing">
+    Extracts frontmatter from MDX files for dynamic SEO properties
+  </Step>
+  
+  <Step title="Template Evaluation">
+    Parses templates (`/docs/${slug}`) against localized cache
+  </Step>
+  
+  <Step title="Prerendering">
+    Loads `<AppRouter />` server bundle into Node process
+  </Step>
+  
+  <Step title="HTML Capture">
+    Calls `Ryunix.renderToReadableStream()` or `renderToString()`
+  </Step>
+  
+  <Step title="Metadata Injection">
+    Injects `<meta>`, `<link rel="canonical">`, `<title>` into `index.html`
+  </Step>
+  
+  <Step title="File Output">
+    Saves HTML files mapping to URL routes
+  </Step>
+  
+  <Step title="Manifest Generation">
+    Outputs `sitemap.xml` and `robots.txt`
+  </Step>
+</Steps>
+
+**Build Trigger:**
+
+```javascript
+if (defaultSettings.webpack.production) {
+  await Prerender(defaultSettings.buildDir)
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/bin/index.mjs:162-164`
+
+### Prerender Configuration (Legacy)
+
+<Warning>
+This configuration is **deprecated**. Use file-based metadata in the `app/` directory instead.
+</Warning>
+
+```javascript
+export default {
+  legacy: {
+    ssg: {
+      sitemap: {
+        enable: true,
+        baseURL: 'https://example.com',
+        settings: {
+          changefreq: 'weekly',
+          priority: '0.7'
+        }
+      },
+      prerender: [
+        '/',
+        '/about',
+        '/blog',
+        '/docs/getting-started'
+      ]
+    }
+  }
+}
+```
+
+### SEO Manifests
+
+SSG automatically generates SEO files:
+
+#### `sitemap.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://example.com/</loc>
+    <lastmod>2026-03-14</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://example.com/about</loc>
+    <lastmod>2026-03-14</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>
+```
+
+#### `robots.txt`
+
+```
+User-agent: *
+Allow: /
+
+Sitemap: https://example.com/sitemap.xml
+```
+
+**Source:** See routing documentation for manifest generation
+
+---
+
+## Dual Compiler Architecture
+
+When SSR or SSG is enabled, Webpack runs two parallel compilations:
+
+### Client Config
+
+**Target:** `web` (browser)
+
+```javascript
+const clientConfig = {
+  name: 'client',
+  target: 'web',
+  entry: './main.ryx',
+  output: {
+    path: '.ryunix/static',
+    filename: 'chunks/[name].[contenthash].bundle.js'
+  },
+  plugins: [
+    new HtmlWebpackPlugin(),
+    new MiniCssExtractPlugin(),
+    new CopyWebpackPlugin()
+  ]
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:361-534`
+
+---
+
+### Server Config
+
+**Target:** `node` (Node.js)
+
+```javascript
+const serverConfig = {
+  name: 'server',
+  target: 'node',
+  entry: '.ryunix/server/app/app-router-server.js',
+  output: {
+    path: '.ryunix/server',
+    filename: 'app-router-server.bundle.mjs',
+    library: { type: 'module' },
+    chunkFormat: 'module'
+  },
+  experiments: {
+    outputModule: true
+  },
+  optimization: {
+    minimize: false
+  }
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:537-591`
+
+---
+
+### Export Strategy
+
+```javascript
+const enableServerDualCompiler = 
+  config.ssr || 
+  (config.webpack.production && config.legacy.ssg?.prerender?.length > 0)
+
+export default enableServerDualCompiler
+  ? [clientConfig, serverConfig]
+  : clientConfig
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:594-597`
+
+---
+
+## Hydration
+
+After SSR delivers HTML, the client takes over:
+
+### Initialization
+
+```javascript
+import Ryunix from '@unsetsoft/ryunixjs'
+import App from './App'
+
+if (process.env.RYUNIX_SSR) {
+  // Hydrate existing server-rendered HTML
+  Ryunix.init(App, {
+    hydrate: true,
+    target: document.getElementById('app')
+  })
+} else {
+  // Client-side only rendering
+  Ryunix.init(App, {
+    target: document.getElementById('app')
+  })
+}
+```
+
+### Island Architecture
+
+The `ryunix-rsc-loader.mjs` enables partial hydration:
+
+1. Tags client components with `ryunix_client_id`
+2. Registers them in `window.__RYUNIX_ISLANDS__`
+3. Server emits `data-ryunix-island="hash"` attributes
+4. Client hydrates only interactive islands
+
+**Benefits:**
+- Smaller JavaScript bundles
+- Faster Time to Interactive (TTI)
+- Progressive enhancement
+
+**Source:** See loaders documentation for RSC loader details
+
+---
+
+## Metadata & SEO
+
+### Static Metadata
+
+```javascript
+// app/blog/page.ryx
+export const metadata = {
+  title: 'Blog',
+  description: 'Latest posts',
+  openGraph: {
+    title: 'Blog',
+    image: '/og-image.png'
+  }
+}
+
+export default function BlogPage() {
+  return <h1>Blog</h1>
+}
+```
+
+**Rendered as:**
+
+```html
+<head>
+  <title>Blog</title>
+  <meta name="description" content="Latest posts" />
+  <meta property="og:title" content="Blog" />
+  <meta property="og:image" content="/og-image.png" />
+</head>
+```
+
+---
+
+### Dynamic Metadata
+
+```javascript
+// app/blog/[slug]/page.ryx
+export async function generateMetadata({ params }) {
+  const post = await db.posts.findBySlug(params.slug)
+  
+  return {
+    title: post.title,
+    description: post.excerpt,
+    canonical: `https://example.com/blog/${params.slug}`,
+    openGraph: {
+      title: post.title,
+      description: post.excerpt,
+      image: post.coverImage,
+      type: 'article',
+      publishedTime: post.publishedAt
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.excerpt,
+      image: post.coverImage
+    }
+  }
+}
+
+export default async function BlogPost({ params }) {
+  const post = await db.posts.findBySlug(params.slug)
+  return <article>{post.content}</article>
+}
+```
+
+---
+
+### Metadata Inheritance
+
+Metadata merges from root to leaf:
+
+1. **Root Layout** (`app/layout.ryx`)
+2. **Nested Layout** (`app/blog/layout.ryx`)
+3. **Page** (`app/blog/[slug]/page.ryx`) - highest priority
+
+**Example:**
+
+```javascript
+// app/layout.ryx
+export const metadata = {
+  siteName: 'My Site',
+  locale: 'en_US'
+}
+
+// app/blog/layout.ryx
+export const metadata = {
+  titleTemplate: '%s | Blog'
+}
+
+// app/blog/hello/page.ryx
+export const metadata = {
+  title: 'Hello World'
+}
+
+// Final output:
+// <title>Hello World | Blog</title>
+// <meta property="og:site_name" content="My Site" />
+// <meta property="og:locale" content="en_US" />
+```
+
+---
+
+## Environment Detection
+
+Detect rendering environment in components:
+
+```javascript
+export default function Component() {
+  const isServer = process.env.RYUNIX_IS_SERVER
+  const isSSR = process.env.RYUNIX_SSR
+  
+  if (isServer) {
+    // Running on Node.js server
+    return <div>Server</div>
+  }
+  
+  // Running in browser
+  return <div>Client</div>
+}
+```
+
+**Injected by DefinePlugin:**
+
+```javascript
+new webpack.DefinePlugin({
+  'process.env.RYUNIX_SSR': JSON.stringify(config.ssr),
+  'process.env.RYUNIX_IS_SERVER': JSON.stringify(isServer)
+})
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:293-300`
+
+---
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Prefer SSG" icon="file">
+    Use SSG for static content (blogs, docs) for best performance
+  </Card>
+  
+  <Card title="Use SSR Sparingly" icon="server">
+    Reserve SSR for dynamic, personalized content
+  </Card>
+  
+  <Card title="Server Components" icon="bolt">
+    Fetch data in Server Components to reduce client JS
+  </Card>
+  
+  <Card title="Island Hydration" icon="island">
+    Mark interactive components as client components only
+  </Card>
+</CardGroup>
+
+---
+
+## Troubleshooting
+
+### SSR Not Working
+
+<AccordionGroup>
+  <Accordion title="Check SSR is enabled">
+    ```javascript
+    // ryunix.config.js
+    export default {
+      ssr: true
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Verify server bundle exists">
+    ```bash
+    ls .ryunix/server/app-router-server.bundle.mjs
+    ```
+  </Accordion>
+  
+  <Accordion title="Check console for errors">
+    Look for SSR-related errors in the terminal output
+  </Accordion>
+</AccordionGroup>
+
+### SSG Not Generating Files
+
+<AccordionGroup>
+  <Accordion title="Ensure production mode">
+    ```bash
+    RYUNIX_MODE=production ryunix build
+    ```
+  </Accordion>
+  
+  <Accordion title="Check prerender config">
+    Verify routes are listed in `legacy.ssg.prerender` or use App Router metadata
+  </Accordion>
+</AccordionGroup>

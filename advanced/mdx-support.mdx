@@ -1,0 +1,580 @@
+---
+title: MDX Support
+description: Integrate MDX content seamlessly with RyunixJS components and providers
+---
+
+## Overview
+
+RyunixJS provides first-class MDX support with optimized component rendering, context-based customization, and server-side rendering compatibility.
+
+## Built-in MDX Components
+
+RyunixJS includes default components for all MDX elements:
+
+```javascript
+// Source: packages/core/src/lib/components.js:127-163
+const defaultComponents = {
+  // Headings
+  h1, h2, h3, h4, h5, h6,
+  
+  // Text
+  p, a, strong, em, code,
+  
+  // Lists
+  ul, ol, li,
+  
+  // Blocks
+  blockquote, pre, hr,
+  
+  // Tables
+  table, thead, tbody, tr, th, td,
+  
+  // Media
+  img
+}
+```
+
+All components are optimized for Ryunix's reconciliation engine.
+
+## MDXProvider
+
+Provide custom components throughout your MDX content tree:
+
+```jsx
+import { MDXProvider } from 'ryunix';
+
+function App() {
+  const components = {
+    h1: (props) => <h1 className="text-4xl font-bold" {...props} />,
+    p: (props) => <p className="my-4 text-gray-700" {...props} />,
+    code: (props) => <code className="bg-gray-100 px-2 py-1" {...props} />,
+  };
+  
+  return (
+    <MDXProvider value={components}>
+      <Article />
+    </MDXProvider>
+  );
+}
+```
+
+### API Signature
+
+```javascript
+const { Provider: MDXProvider } = createContext('ryunix.mdx', {})
+```
+
+**Props:**
+- `value` (Object) - Component overrides for MDX elements
+- `children` - MDX content or components
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/components.js:106-109`
+
+## useMDXComponents Hook
+
+Access MDX components from context within your custom components:
+
+```jsx
+import { useMDXComponents } from 'ryunix';
+
+function CustomCode({ children, className }) {
+  const components = useMDXComponents();
+  const language = className?.replace('language-', '');
+  
+  return (
+    <div className="code-block">
+      <div className="code-header">{language}</div>
+      <components.pre>
+        <components.code className={className}>
+          {children}
+        </components.code>
+      </components.pre>
+    </div>
+  );
+}
+```
+
+### API Signature
+
+```javascript
+const useMDXComponents = () => Object
+```
+
+**Returns:**
+- Object containing current MDX component mappings
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/components.js:106`
+
+## getMDXComponents
+
+Merge context components with additional overrides:
+
+```jsx
+import { getMDXComponents } from 'ryunix';
+
+function Article({ additionalComponents }) {
+  const components = getMDXComponents(additionalComponents);
+  
+  // components contains both context and additional components
+  return <Content components={components} />;
+}
+```
+
+### API Signature
+
+```javascript
+const getMDXComponents = (components) => Object
+```
+
+**Parameters:**
+- `components` (Object) - Additional components to merge
+
+**Returns:**
+- Merged object with context components and provided components
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/components.js:116-122`
+
+**Implementation:**
+
+```javascript
+const getMDXComponents = (components) => {
+  const contextComponents = useMDXComponents();
+  return {
+    ...contextComponents,
+    ...components,
+  };
+}
+```
+
+## MDXContent Wrapper
+
+Provides default styling and component structure for MDX:
+
+```jsx
+import { MDXContent } from 'ryunix';
+
+function Page({ children }) {
+  return (
+    <MDXContent 
+      components={{
+        h1: Heading1,
+        code: CodeBlock,
+      }}
+    >
+      {children}
+    </MDXContent>
+  );
+}
+```
+
+### API Signature
+
+```javascript
+const MDXContent = ({ children, components = {} }) => Element
+```
+
+**Props:**
+- `children` - MDX content to render
+- `components` (Object) - Component overrides
+
+**Source:** `/home/daytona/workspace/source/packages/core/src/lib/components.js:169-177`
+
+## Custom Component Examples
+
+### Styled Headings
+
+Create consistent heading styles:
+
+```jsx
+const components = {
+  h1: ({ children, ...props }) => (
+    <h1 
+      className="text-4xl font-bold mb-6 mt-8" 
+      {...props}
+    >
+      {children}
+    </h1>
+  ),
+  h2: ({ children, ...props }) => (
+    <h2 
+      className="text-3xl font-semibold mb-4 mt-6" 
+      {...props}
+    >
+      {children}
+    </h2>
+  ),
+  h3: ({ children, ...props }) => (
+    <h3 
+      className="text-2xl font-medium mb-3 mt-4" 
+      {...props}
+    >
+      {children}
+    </h3>
+  ),
+};
+```
+
+### Interactive Code Blocks
+
+```jsx
+import { useStore } from 'ryunix';
+
+function CodeBlock({ children, className, live }) {
+  const [copied, setCopied] = useStore(false);
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  
+  return (
+    <div className="code-block">
+      <button 
+        onClick={handleCopy}
+        className="copy-button"
+      >
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+      <pre className={className}>
+        <code>{children}</code>
+      </pre>
+    </div>
+  );
+}
+
+const components = {
+  code: CodeBlock,
+};
+```
+
+### Custom Links
+
+Add icons or analytics to links:
+
+```jsx
+function CustomLink({ href, children, ...props }) {
+  const isExternal = href.startsWith('http');
+  
+  const handleClick = () => {
+    if (isExternal) {
+      analytics.track('External Link Clicked', { href });
+    }
+  };
+  
+  return (
+    <a 
+      href={href}
+      onClick={handleClick}
+      target={isExternal ? '_blank' : undefined}
+      rel={isExternal ? 'noopener noreferrer' : undefined}
+      {...props}
+    >
+      {children}
+      {isExternal && <ExternalIcon />}
+    </a>
+  );
+}
+
+const components = {
+  a: CustomLink,
+};
+```
+
+### Enhanced Images
+
+Use the built-in Image component with lazy loading:
+
+```jsx
+import { Image } from 'ryunix';
+
+function OptimizedImage({ src, alt, ...props }) {
+  return (
+    <figure>
+      <Image 
+        src={src} 
+        alt={alt}
+        loading="lazy"
+        {...props}
+      />
+      {alt && <figcaption>{alt}</figcaption>}
+    </figure>
+  );
+}
+
+const components = {
+  img: OptimizedImage,
+};
+```
+
+**Note:** Image component source at `/home/daytona/workspace/source/packages/core/src/lib/components.js:102-104`
+
+### Custom Callouts
+
+Create reusable callout components:
+
+```jsx
+function Callout({ type = 'info', children }) {
+  const styles = {
+    info: 'bg-blue-50 border-blue-200 text-blue-900',
+    warning: 'bg-yellow-50 border-yellow-200 text-yellow-900',
+    error: 'bg-red-50 border-red-200 text-red-900',
+    success: 'bg-green-50 border-green-200 text-green-900',
+  };
+  
+  return (
+    <div className={`callout border-l-4 p-4 ${styles[type]}`}>
+      {children}
+    </div>
+  );
+}
+
+// Use in MDX:
+// <Callout type="warning">
+//   This is important!
+// </Callout>
+```
+
+## Nested MDXProviders
+
+Providers can be nested for granular control:
+
+```jsx
+import { MDXProvider } from 'ryunix';
+
+function App() {
+  const globalComponents = {
+    h1: GlobalH1,
+    p: GlobalP,
+  };
+  
+  const articleComponents = {
+    code: ArticleCode,
+    pre: ArticlePre,
+  };
+  
+  return (
+    <MDXProvider value={globalComponents}>
+      <Layout>
+        <MDXProvider value={articleComponents}>
+          <Article />
+        </MDXProvider>
+      </Layout>
+    </MDXProvider>
+  );
+}
+```
+
+Inner providers merge with outer providers (inner takes precedence).
+
+## Server-Side Rendering
+
+MDX components work seamlessly with SSR:
+
+```jsx
+import { renderToString, MDXProvider } from 'ryunix';
+
+const components = {
+  h1: CustomH1,
+  code: CustomCode,
+};
+
+const html = renderToString(
+  <MDXProvider value={components}>
+    <MDXContent />
+  </MDXProvider>
+);
+```
+
+All component customizations are preserved during server rendering.
+
+## Integration with MDX
+
+Use with `@mdx-js/loader` or similar tools:
+
+```jsx
+// article.mdx
+import { Callout } from './components';
+
+# My Article
+
+Regular MDX content here.
+
+<Callout type="info">
+  This uses custom components!
+</Callout>
+```
+
+```jsx
+// App.jsx
+import { MDXProvider } from 'ryunix';
+import Article from './article.mdx';
+
+function App() {
+  return (
+    <MDXProvider value={components}>
+      <Article />
+    </MDXProvider>
+  );
+}
+```
+
+## Advanced Patterns
+
+### Dynamic Component Resolution
+
+```jsx
+import { getMDXComponents } from 'ryunix';
+
+function DynamicMDX({ theme, children }) {
+  const baseComponents = getMDXComponents();
+  
+  const themedComponents = {
+    ...baseComponents,
+    h1: theme === 'dark' ? DarkH1 : LightH1,
+    p: theme === 'dark' ? DarkP : LightP,
+  };
+  
+  return (
+    <MDXProvider value={themedComponents}>
+      {children}
+    </MDXProvider>
+  );
+}
+```
+
+### Component Analytics
+
+Track MDX component usage:
+
+```jsx
+function withAnalytics(Component, name) {
+  return (props) => {
+    useEffect(() => {
+      analytics.track('MDX Component Rendered', { name });
+    }, []);
+    
+    return <Component {...props} />;
+  };
+}
+
+const components = {
+  code: withAnalytics(CodeBlock, 'CodeBlock'),
+  img: withAnalytics(Image, 'Image'),
+};
+```
+
+### Responsive Tables
+
+Enhance tables with responsive wrappers:
+
+```jsx
+function ResponsiveTable({ children, ...props }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y" {...props}>
+        {children}
+      </table>
+    </div>
+  );
+}
+
+const components = {
+  table: ResponsiveTable,
+};
+```
+
+## Best Practices
+
+### 1. Keep Components Pure
+
+MDX components render frequently; keep them pure:
+
+```jsx
+// Good: Pure component
+const H1 = (props) => <h1 className="title" {...props} />;
+
+// Avoid: Side effects
+const H1 = (props) => {
+  console.log('Rendering'); // Don't do this
+  return <h1 {...props} />;
+};
+```
+
+### 2. Spread Props Last
+
+Allow MDX to override your defaults:
+
+```jsx
+// Good: MDX can override className
+const H1 = (props) => <h1 className="title" {...props} />;
+
+// Bad: className locked
+const H1 = (props) => <h1 {...props} className="title" />;
+```
+
+### 3. Use Semantic HTML
+
+Maintain accessibility:
+
+```jsx
+const components = {
+  h1: (props) => <h1 {...props} />,  // Keep semantic tags
+  p: (props) => <p {...props} />,
+};
+```
+
+### 4. Memoize Component Objects
+
+Prevent unnecessary re-renders:
+
+```jsx
+import { useMemo } from 'ryunix';
+
+function App() {
+  const components = useMemo(() => ({
+    h1: CustomH1,
+    code: CustomCode,
+  }), []);
+  
+  return (
+    <MDXProvider value={components}>
+      <Content />
+    </MDXProvider>
+  );
+}
+```
+
+## Performance Tips
+
+Ryunix MDX components are optimized by default:
+
+- No wrapper elements (using `createElement` directly)
+- Minimal reconciliation overhead
+- Compatible with memo and lazy loading
+
+```jsx
+import { memo, lazy, Suspense } from 'ryunix';
+
+// Memoize expensive components
+const MemoizedCode = memo(CustomCode);
+
+// Lazy load heavy components
+const Chart = lazy(() => import('./Chart'));
+
+const components = {
+  code: MemoizedCode,
+  Chart,
+};
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Component" icon="image" href="/api/components/MDXProvider">
+    Learn about the built-in Image component
+  </Card>
+  <Card title="Context API" icon="share-nodes" href="/api/hooks/useContext">
+    Deep dive into createContext
+  </Card>
+</CardGroup>

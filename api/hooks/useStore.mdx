@@ -1,0 +1,132 @@
+---
+title: 'useStore'
+description: 'State management hook with functional and direct updates'
+icon: 'database'
+---
+
+## Overview
+
+`useStore` is RyunixJS's primary state management hook. It provides a simple API for managing component state with support for both direct value updates and functional updates.
+
+## Signature
+
+```javascript
+const [state, dispatch] = useStore(initialState)
+```
+
+## Parameters
+
+<ParamField path="initialState" type="any | Function" required>
+  The initial state value. Can be any type (primitive, object, array) or a function that returns the initial state. During server-side rendering, if a function is provided, it will be called to compute the initial state.
+</ParamField>
+
+## Return Value
+
+Returns an array with two elements:
+
+- `state` - The current state value
+- `dispatch` - Function to update the state
+
+## Usage
+
+### Basic State Management
+
+```javascript
+import { useStore } from 'ryunix'
+
+function Counter() {
+  const [count, setCount] = useStore(0)
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  )
+}
+```
+
+### Functional Updates
+
+```javascript
+function Counter() {
+  const [count, setCount] = useStore(0)
+
+  // Functional update ensures you're working with the latest state
+  const increment = () => setCount(prev => prev + 1)
+  const decrement = () => setCount(prev => prev - 1)
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+</button>
+      <button onClick={decrement}>-</button>
+    </div>
+  )
+}
+```
+
+### Lazy Initialization
+
+```javascript
+function ExpensiveComponent() {
+  // Initial state is computed only once
+  const [data, setData] = useStore(() => {
+    return computeExpensiveInitialValue()
+  })
+
+  return <div>{data}</div>
+}
+```
+
+### Object State
+
+```javascript
+function UserForm() {
+  const [user, setUser] = useStore({
+    name: '',
+    email: '',
+    age: 0
+  })
+
+  const updateField = (field, value) => {
+    setUser(prev => ({ ...prev, [field]: value }))
+  }
+
+  return (
+    <form>
+      <input
+        value={user.name}
+        onChange={(e) => updateField('name', e.target.value)}
+      />
+      <input
+        value={user.email}
+        onChange={(e) => updateField('email', e.target.value)}
+      />
+    </form>
+  )
+}
+```
+
+## Implementation Details
+
+- Built on top of `useReducer` with a flexible reducer that accepts both values and functions
+- During SSR, returns the initial state with a no-op dispatch function
+- Updates are batched and scheduled through RyunixJS's work scheduler
+- Functional updates receive the previous state and should return the new state
+
+## Comparison with React
+
+`useStore` is similar to React's `useState` but with some key differences:
+
+- Named `useStore` to emphasize state management
+- Built on `useReducer` internally for consistency
+- Dispatch accepts both direct values and functions (like `setState`)
+- During SSR, safely returns initial state without throwing errors
+
+## Related Hooks
+
+- [useReducer](/api/hooks/useReducer) - For complex state logic with actions
+- [usePersistentStore](/api/hooks/useStore) - State synchronized with localStorage
+- [useSwitch](/api/hooks/useStore) - Boolean state toggle
+- [useTransition](/api/hooks/useTransition) - Non-urgent state updates

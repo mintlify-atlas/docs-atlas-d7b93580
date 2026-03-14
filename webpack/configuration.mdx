@@ -1,0 +1,678 @@
+---
+title: Configuration
+description: Complete guide to configuring the Webpack preset
+icon: gear
+---
+
+The Webpack preset uses a centralized configuration system that merges user settings from `ryunix.config.js` with intelligent defaults.
+
+## Configuration File
+
+Create `ryunix.config.js` in your project root:
+
+```javascript
+export default {
+  // Modern first-class options
+  ssr: true,
+  mdx: false,
+  rootDir: 'src',
+  buildDir: '.ryunix',
+  port: 3000,
+  debug: false,
+  
+  // Webpack configuration
+  webpack: {
+    target: 'web',
+    resolve: { /* ... */ },
+    plugins: [],
+    module: { rules: [] }
+  },
+  
+  // ESLint configuration
+  eslint: {
+    files: ['**/*.ryx'],
+    rules: { /* ... */ }
+  }
+}
+```
+
+## Core Options
+
+### `ssr`
+
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Enable Server-Side Rendering
+
+When enabled, activates the dual compiler architecture (client + server builds).
+
+```javascript
+export default {
+  ssr: true
+}
+```
+
+**Impact:**
+- Enables server-side bundle compilation (`target: 'node'`)
+- Activates `renderDevRoute` middleware in dev mode
+- Generates `app-router-server.bundle.mjs`
+
+---
+
+### `mdx`
+
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable MDX file support
+
+```javascript
+export default {
+  mdx: true
+}
+```
+
+**What it enables:**
+- MDX loader with `@mdx-js/loader`
+- Remark plugins: `remarkGfm`, `remarkFrontmatter`, `remarkMdxFrontmatter`
+- Rehype plugins: `rehypeHighlight`
+- JSX import source: `@unsetsoft/ryunixjs`
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:176-195`
+
+---
+
+### `rootDir`
+
+- **Type:** `string`
+- **Default:** `'src'`
+- **Description:** Source directory for application code
+
+```javascript
+export default {
+  rootDir: 'app'
+}
+```
+
+**Replaces deprecated:** `webpack.root`
+
+---
+
+### `buildDir`
+
+- **Type:** `string`
+- **Default:** `'.ryunix'`
+- **Description:** Build output directory
+
+```javascript
+export default {
+  buildDir: 'dist'
+}
+```
+
+**Output Structure:**
+```
+.ryunix/
+├── static/          # Client bundles
+├── server/          # Server bundles
+│   ├── app/
+│   ├── api/
+│   └── app-router-server.bundle.mjs
+└── cache/           # Webpack cache
+    ├── webpack/
+    └── babel-loader/
+```
+
+**Replaces deprecated:** `webpack.output.buildDirectory`
+
+---
+
+### `port`
+
+- **Type:** `number`
+- **Default:** `3000`
+- **Description:** Dev server port
+
+```javascript
+export default {
+  port: 8080
+}
+```
+
+If the port is occupied, the dev server automatically increments to the next available port.
+
+**Replaces deprecated:** `webpack.devServer.port`
+
+---
+
+### `proxy`
+
+- **Type:** `array`
+- **Default:** `[]`
+- **Description:** Webpack DevServer proxy configuration
+
+```javascript
+export default {
+  proxy: [
+    {
+      context: ['/api'],
+      target: 'http://localhost:5000',
+      changeOrigin: true
+    }
+  ]
+}
+```
+
+**Replaces deprecated:** `webpack.devServer.proxy`
+
+---
+
+### `favicon`
+
+- **Type:** `boolean | string`
+- **Default:** `true`
+- **Description:** Favicon configuration
+
+```javascript
+// Auto-detect from public/favicon.png
+export default {
+  favicon: true
+}
+
+// Custom path
+export default {
+  favicon: 'assets/icon.png'
+}
+
+// Disable
+export default {
+  favicon: false
+}
+```
+
+---
+
+### `debug`
+
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable debug logging
+
+```javascript
+export default {
+  debug: true
+}
+```
+
+**Sets:** `process.env.RYUNIX_DEBUG = 'true'`
+
+---
+
+### `env`
+
+- **Type:** `object`
+- **Default:** `{}`
+- **Description:** Environment variables exposed to the client
+
+```javascript
+export default {
+  env: {
+    API_URL: 'https://api.example.com',
+    FEATURE_FLAG: true
+  }
+}
+```
+
+**Access in code:**
+```javascript
+const apiUrl = ryunix.config.env.API_URL
+```
+
+**Also supports `.env` files** with `RYUNIX_APP_` prefix:
+```bash
+RYUNIX_APP_API_KEY=secret123
+```
+
+Access via:
+```javascript
+const key = ryunix.env.RYUNIX_APP_API_KEY
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:286-292`
+
+---
+
+## Webpack Configuration
+
+### `webpack.target`
+
+- **Type:** `string`
+- **Default:** `'web'`
+- **Description:** Webpack target environment
+
+```javascript
+export default {
+  webpack: {
+    target: 'web'
+  }
+}
+```
+
+---
+
+### `webpack.resolve.alias`
+
+- **Type:** `object`
+- **Description:** Path aliases for imports
+
+```javascript
+export default {
+  webpack: {
+    resolve: {
+      alias: {
+        '@components': 'src/components',
+        '@utils': 'src/utils',
+        '@': 'src'
+      }
+    }
+  }
+}
+```
+
+**Usage:**
+```javascript
+import Button from '@components/Button'
+import { format } from '@utils/date'
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:59-66`
+
+---
+
+### `webpack.resolve.extensions`
+
+- **Type:** `array`
+- **Default:** `[]`
+- **Description:** Additional file extensions to resolve
+
+```javascript
+export default {
+  webpack: {
+    resolve: {
+      extensions: ['.ts', '.tsx']
+    }
+  }
+}
+```
+
+**Default extensions:** `.js`, `.jsx`, `.ryx`, `.mdx`, `.md`
+
+---
+
+### `webpack.resolve.fallback`
+
+- **Type:** `object`
+- **Description:** Polyfill Node.js modules for browser
+
+```javascript
+export default {
+  webpack: {
+    resolve: {
+      fallback: {
+        crypto: require.resolve('crypto-browserify'),
+        stream: require.resolve('stream-browserify')
+      }
+    }
+  }
+}
+```
+
+---
+
+### `webpack.plugins`
+
+- **Type:** `array`
+- **Default:** `[]`
+- **Description:** Additional Webpack plugins (client build only)
+
+```javascript
+import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer'
+
+export default {
+  webpack: {
+    plugins: [
+      new BundleAnalyzerPlugin()
+    ]
+}
+}
+```
+
+<Warning>
+These plugins are only applied to the **client build**. They are not included in the server build.
+</Warning>
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:358`
+
+---
+
+### `webpack.module.rules`
+
+- **Type:** `array`
+- **Default:** `[]`
+- **Description:** Additional Webpack loaders
+
+```javascript
+export default {
+  webpack: {
+    module: {
+      rules: [
+        {
+          test: /\.svg$/,
+          use: ['@svgr/webpack']
+        }
+      ]
+    }
+  }
+}
+```
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:255`
+
+---
+
+### `webpack.externals`
+
+- **Type:** `array`
+- **Default:** `[{}]`
+- **Description:** External dependencies not bundled
+
+```javascript
+export default {
+  webpack: {
+    externals: [
+      { jquery: 'jQuery' }
+    ]
+  }
+}
+```
+
+---
+
+### `webpack.experiments.lazyCompilation`
+
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable Webpack 5 lazy compilation
+
+```javascript
+export default {
+  webpack: {
+    experiments: {
+      lazyCompilation: true
+    }
+  }
+}
+```
+
+**Impact:** Only compiles modules when they're requested, significantly speeding up initial dev server startup.
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:109-111`
+
+---
+
+## ESLint Configuration
+
+### `eslint.files`
+
+- **Type:** `array`
+- **Default:** `['**/*.ryx']`
+- **Description:** File patterns to lint
+
+```javascript
+export default {
+  eslint: {
+    files: ['**/*.ryx', '**/*.js', '**/*.jsx']
+  }
+}
+```
+
+---
+
+### `eslint.rules`
+
+- **Type:** `object`
+- **Description:** ESLint rule overrides
+
+```javascript
+export default {
+  eslint: {
+    rules: {
+      'no-console': 'warn',
+      'no-unused-vars': 'error',
+      'react/prop-types': 'off'
+    }
+  }
+}
+```
+
+**Default rules:**
+- `max-len`: 400 characters
+- `no-console`: off
+- `no-unused-vars`: warn
+- `react/jsx-uses-react`: off (auto-imports Ryunix)
+- `react/react-in-jsx-scope`: off
+
+**Source:** `/packages/ryunix-presets/webpack/utils/config.cjs:76-95`
+
+---
+
+## Server Configuration
+
+### `server.cors`
+
+- **Type:** `object`
+- **Description:** CORS settings for production server
+
+```javascript
+export default {
+  server: {
+    cors: {
+      enabled: true,
+      origin: '*',
+      methods: 'GET, POST, PUT, DELETE',
+      headers: 'Content-Type, Authorization',
+      credentials: true
+    }
+  }
+}
+```
+
+---
+
+### `server.csp`
+
+- **Type:** `boolean | string`
+- **Default:** `false`
+- **Description:** Content Security Policy header
+
+```javascript
+export default {
+  server: {
+    csp: "default-src 'self'; script-src 'self' 'unsafe-inline'"
+  }
+}
+```
+
+---
+
+## Legacy Configuration
+
+<Warning>
+These options are **deprecated** and maintained for backwards compatibility only. Use the App Router conventions instead.
+</Warning>
+
+### `legacy.seo`
+
+```javascript
+export default {
+  legacy: {
+    seo: {
+      pageLang: 'en',
+      title: 'My App',
+      meta: {
+        description: 'App description',
+        keywords: 'react, framework'
+      }
+    }
+  }
+}
+```
+
+**Modern alternative:** Use `export const metadata` in `layout.ryx`
+
+---
+
+### `legacy.template`
+
+```javascript
+export default {
+  legacy: {
+    template: 'public/index.html'
+  }
+}
+```
+
+**Modern alternative:** Use root `layout.ryx`
+
+---
+
+### `legacy.ssg`
+
+```javascript
+export default {
+  legacy: {
+    ssg: {
+      sitemap: {
+        enable: true,
+        baseURL: 'https://example.com',
+        settings: {
+          changefreq: 'weekly',
+          priority: '0.7'
+        }
+      },
+      prerender: ['/', '/about', '/contact']
+    }
+  }
+}
+```
+
+**Modern alternative:** Use file-based metadata in the `app/` directory
+
+---
+
+## Dual Compiler Architecture
+
+When SSR is enabled, the preset uses two Webpack configurations:
+
+### Client Config
+
+- **Target:** `web`
+- **Output:** `.ryunix/static/`
+- **Features:** HMR, CSS extraction, minification
+- **Entry:** Auto-detected from `app/` or fallback to `main.ryx`
+
+### Server Config
+
+- **Target:** `node`
+- **Output:** `.ryunix/server/app-router-server.bundle.mjs`
+- **Features:** ES Module output, no CSS, server components
+- **Entry:** `.ryunix/server/app/app-router-server.js`
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:594-597`
+
+---
+
+## Optimization
+
+The preset includes aggressive optimization:
+
+### Code Splitting
+
+```javascript
+splitChunks: {
+  cacheGroups: {
+    framework: {
+      test: /[\/]node_modules[\/](@unsetsoft[\/]ryunixjs)[\/]/,
+      name: 'framework',
+      priority: 40
+    },
+    vendor: {
+      test: /[\/]node_modules[\/]/,
+      name: 'vendors',
+      priority: 20
+    },
+    common: {
+      minChunks: 2,
+      priority: 10
+    }
+  }
+}
+```
+
+### Minification
+
+- **JavaScript:** TerserPlugin with 2-pass compression
+- **CSS:** CssMinimizerPlugin
+
+### Caching
+
+- **Type:** Filesystem
+- **Location:** `.ryunix/cache/webpack/`
+- **Strategy:** Content-based invalidation with ENV hash
+
+**Source:** `/packages/ryunix-presets/webpack/webpack.config.mjs:108-169`
+
+---
+
+## Example: Full Configuration
+
+```javascript
+export default {
+  ssr: true,
+  mdx: true,
+  rootDir: 'src',
+  buildDir: '.ryunix',
+  port: 3000,
+  debug: false,
+  
+  env: {
+    API_URL: process.env.API_URL || 'http://localhost:5000'
+  },
+  
+  webpack: {
+    resolve: {
+      alias: {
+        '@': 'src',
+        '@components': 'src/components'
+      },
+      extensions: ['.ts', '.tsx']
+    },
+    experiments: {
+      lazyCompilation: true
+    }
+  },
+  
+  eslint: {
+    files: ['**/*.ryx', '**/*.js'],
+    rules: {
+      'no-console': 'warn'
+    }
+  },
+  
+  server: {
+    cors: {
+      enabled: true,
+      origin: '*'
+    }
+  }
+}
+```
